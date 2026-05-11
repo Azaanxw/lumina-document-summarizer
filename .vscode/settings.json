@@ -2,5 +2,9 @@
     "explorer.openEditors.sortOrder": "editorOrder",
     "explorer.sortOrder": "modified",
     "explorer.sortOrderLexicographicOptions": "default",
-    "explorer.sortOrderReverse": false
+    "explorer.sortOrderReverse": false,
+    "python.defaultInterpreterPath": "${workspaceFolder}/backend/venv/Scripts/python.exe",
+    "python.analysis.extraPaths": [
+        "${workspaceFolder}/backend"
+    ]
 }

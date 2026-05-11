@@ -7,8 +7,8 @@
 - [x] Project Folder Structure & Git Setup
 
 ## Phase 2: Backend Development (Current) 🛠️
-- [ ] Create FastAPI PDF Upload Endpoint
-- [ ] Integrate Boto3 for S3 File Transfer
+- [x] Create FastAPI PDF Upload Endpoint
+- [x] Integrate Boto3 for S3 File Transfer
 - [ ] Set up Supabase DB Schema for metadata
 - [ ] Implement PDF text extraction logic
 

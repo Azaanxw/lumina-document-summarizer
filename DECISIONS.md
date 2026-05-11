@@ -23,9 +23,9 @@ Choice: Supabase (PostgreSQL)
 Why: I’m using Supabase for the database and authentication because it proves I can handle relational data and user privacy using Row Level Security (RLS). This is where I track the document history and user sessions.
 
 5. **File & Object Storage**
-Choice: AWS S3 (managed via Terraform)
+Choice: AWS S3 (managed via Terraform) + Boto3
 
-Why: I chose AWS S3 as the object storage solution for saving the original PDF files. To take it a step further, I managed this via Terraform to prove I can use industry-standard cloud services and Infrastructure as Code.
+Why: I chose AWS S3 as the object storage solution for saving the original PDF files. To take it a step further, I managed this via Terraform to prove I can use industry-standard cloud services and Infrastructure as Code. Boto3 is used for S3 file transfer
 
 6. **UI & Design System**
 Choice: Shadcn/ui + Tailwind CSS
