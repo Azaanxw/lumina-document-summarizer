@@ -9,14 +9,17 @@ def get_supabase_client() -> Client:
         raise ValueError("SUPABASE_URL and SUPABASE_ANON_KEY must be set")
     return create_client(url, key)
 
-def save_document_metadata(user_id: str, filename: str):
-    """Saves the unique S3 filename to the database."""
+# db_utils.py (Update this function)
+
+def save_document_metadata(user_id: str, filename: str, content: str):
+    """Saves the unique S3 filename AND extracted text to the database."""
     supabase = get_supabase_client()
     
     try:
         response = supabase.table("documents").insert({
             "user_id": user_id,
-            "filename": filename  # <--- Pointing back to your actual column
+            "filename": filename,
+            "content": content  # <--- Now saving the actual words!
         }).execute()
         
         return response.data

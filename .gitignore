@@ -22,3 +22,5 @@ venv/
 .DS_Store
 .vscode/
 skills-lock.json
+backend/__pycache__/main.cpython-313.pyc
+backend/__pycache__/main.cpython-313.pyc

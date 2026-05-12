@@ -12,7 +12,7 @@
 - [x] Connect FastAPI to Supabase (Database & Auth Secret) 
 - [x] Create `documents` table with `user_id` foreign keys
 - [ ] Implement FastAPI JWT Dependency for Auth Guarding - using mockuserid for now - will do when react frontend is done
-- [ ] Implement PDF text extraction logic
+- [x] Implement PDF text extraction logic
 
 ## Phase 3: AI & RAG Logic 🧠
 - [ ] Implement text extraction (PyMuPDF) and Recursive Character Chunking (LangChain)
