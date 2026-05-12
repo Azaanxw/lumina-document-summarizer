@@ -2,10 +2,12 @@ This document outlines the technical trade-offs and rationale behind the Documen
 
 ---
 
-1. **Vector Storage & Search**
-Choice: Pinecone (Serverless)
+### 1. **Vector Storage & Search**
+**Choice:** Supabase (`pgvector` extension)
 
-Why: I needed a database that handles high-dimensional vector data without the headache of managing a local server. While ChromaDB is great for local testing, Pinecone allows Lumina to be truly "cloud-native" from day one and scales automatically. It’s also a way to show I’m up-to-date with specialized AI databases.
+**Why:** While specialized vector databases like Pinecone are heavily featured in AI tutorials, I chose to use Supabase’s `pgvector` extension to consolidate the architecture. Keeping vector embeddings in the exact same PostgreSQL database as user authentication and document metadata eliminates the "data silo" problem. 
+
+This approach allows for powerful hybrid querying (e.g., performing a Semantic Vector Search strictly filtered by a relational `user_id` foreign key) in a single database call. It also drastically simplifies data lifecycle management—if a user deletes their account or a document, the associated vectors are automatically wiped via cascading deletes, avoiding the need to orchestrate state across multiple third-party APIs. This decision prioritizes data integrity, operational simplicity, and secure Row Level Security (RLS).
 
 2. **Backend Framework**
 Choice: FastAPI (Python)
