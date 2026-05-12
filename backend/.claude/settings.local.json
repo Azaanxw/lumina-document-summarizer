@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(Get-ChildItem \"C:\\\\Users\\\\blizz\\\\Desktop\\\\Projects\\\\Document summarizer\\\\backend\" -Exclude \"venv\",\".venv\")",
+      "Bash(Select-Object Name, PSIsContainer)",
+      "PowerShell(Get-ChildItem \"C:\\\\Users\\\\blizz\\\\Desktop\\\\Projects\\\\Document summarizer\\\\backend\" | Where-Object { $_.Name -notin @\\('venv', '.venv'\\) } | ForEach-Object { \"$\\($_.PSIsContainer\\) $\\($_.Name\\)\" })"
+    ]
+  }
+}
