@@ -17,10 +17,12 @@ export default function Dashboard() {
   const [showUpload, setShowUpload] = useState(false)
 
   useEffect(() => {
+    let cancelled = false
     listDocuments()
-      .then(setDocs)
-      .catch((err) => setError(err instanceof Error ? err.message : "Failed to load documents"))
-      .finally(() => setLoading(false))
+      .then((data) => { if (!cancelled) setDocs(data) })
+      .catch((err) => { if (!cancelled) setError(err instanceof Error ? err.message : "Failed to load documents") })
+      .finally(() => { if (!cancelled) setLoading(false) })
+    return () => { cancelled = true }
   }, [])
 
   function onUploadSuccess(id: string) {

@@ -18,7 +18,9 @@
       "Bash(node -e \"console.log\\(require\\('./node_modules/react-pdf/package.json'\\).version\\)\")",
       "Bash(node -e \"const {pdfjs} = require\\('react-pdf'\\); console.log\\(pdfjs.version\\)\")",
       "Bash(node -e \"console.log\\(require\\('./node_modules/pdfjs-dist/package.json'\\).version\\)\")",
-      "Bash(node -e \"const m = require\\('C:/Users/blizz/Desktop/Projects/Document summarizer/frontend/node_modules/react-pdf/dist/cjs/index.js'\\); console.log\\(Object.keys\\(m\\)\\)\")"
+      "Bash(node -e \"const m = require\\('C:/Users/blizz/Desktop/Projects/Document summarizer/frontend/node_modules/react-pdf/dist/cjs/index.js'\\); console.log\\(Object.keys\\(m\\)\\)\")",
+      "Bash(Get-ChildItem *)",
+      "mcp__supabase__apply_migration"
     ]
   }
 }

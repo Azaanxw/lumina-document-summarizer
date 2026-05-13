@@ -49,6 +49,10 @@ export function SummaryView({ documentId }: SummaryViewProps) {
     return <p className="py-6 text-sm text-destructive">{error}</p>
   }
 
+  if (!summary && quiz.length === 0) {
+    return <p className="py-6 text-sm text-muted-foreground">No content could be generated for this document.</p>
+  }
+
   return (
     <div className="space-y-10 py-6">
       <section className="space-y-3">

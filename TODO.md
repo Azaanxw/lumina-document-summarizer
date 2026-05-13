@@ -56,9 +56,9 @@
 - [x] Dictionary popup on PDF text selection
 - [x] Citation badge click → scroll PDF to page + highlight snippet
 - [x] Real-time summary display
-- [ ] Supabase caching of AI content (summary/quiz/flashcards) per document — avoid re-generation on revisit
-- [ ] Error boundary / empty-state polish across all views
-- [ ] Loading skeletons for all async data fetches
+- [x] Supabase caching of AI content (summary/quiz/flashcards) per document — avoid re-generation on revisit
+- [x] Error boundary / empty-state polish across all views
+- [x] Loading skeletons for all async data fetches
 
 -------------------------------------------------
 

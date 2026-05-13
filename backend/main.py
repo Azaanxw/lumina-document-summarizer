@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 from pydantic import BaseModel
 from s3_utils import upload_to_s3, create_presigned_url, download_from_s3
-from db_utils import save_document_metadata, save_document_chunks, get_document_content, search_chunks, get_user_documents, get_document_filename
+from db_utils import save_document_metadata, save_document_chunks, get_document_content, search_chunks, get_user_documents, get_document_filename, get_document_cache, save_document_cache
 from dotenv import load_dotenv
 from pdf_utils import extract_text_from_pdf, extract_chunks_from_pdf
 from embedding_utils import embed_texts
@@ -86,6 +86,10 @@ async def upload_pdf(file: UploadFile = File(...)):
 
 @app.post("/process-document")
 def process_document(req: DocumentRequest):
+    cache = get_document_cache(req.document_id)
+    if cache and cache.get("summary") and cache.get("quiz"):
+        return {"summary": cache["summary"], "quiz": cache["quiz"]}
+
     content = get_document_content(req.document_id)
     if not content:
         raise HTTPException(status_code=404, detail="Document not found")
@@ -94,10 +98,15 @@ def process_document(req: DocumentRequest):
     if not result:
         raise HTTPException(status_code=500, detail="Failed to generate summary and quiz")
 
+    save_document_cache(req.document_id, {"summary": result["summary"], "quiz": result["quiz"]})
     return result
 
 @app.post("/generate-cards")
 def generate_cards(req: DocumentRequest):
+    cache = get_document_cache(req.document_id)
+    if cache and cache.get("flashcards"):
+        return {"flashcards": cache["flashcards"]}
+
     content = get_document_content(req.document_id)
     if not content:
         raise HTTPException(status_code=404, detail="Document not found")
@@ -106,6 +115,7 @@ def generate_cards(req: DocumentRequest):
     if not result:
         raise HTTPException(status_code=500, detail="Failed to generate flashcards")
 
+    save_document_cache(req.document_id, {"flashcards": result["flashcards"]})
     return result
 
 @app.post("/ask")

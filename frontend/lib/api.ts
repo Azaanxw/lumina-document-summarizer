@@ -9,6 +9,11 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return res.json() as Promise<T>
 }
 
+// Module-level promise cache — both Strict Mode calls share the same in-flight
+// promise so only one HTTP request is made. Subsequent mounts return instantly.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const _cache = new Map<string, Promise<any>>()
+
 export type DocumentMeta = { id: string; filename: string; created_at: string }
 export type QuizQuestion = { question: string; options: string[]; answer: string }
 export type Flashcard = { question: string; answer: string }
@@ -29,20 +34,32 @@ export async function listDocuments(): Promise<DocumentMeta[]> {
   return data.documents
 }
 
+function cached<T>(key: string, fetcher: () => Promise<T>): Promise<T> {
+  if (!_cache.has(key)) {
+    const p = fetcher().catch((err) => { _cache.delete(key); throw err })
+    _cache.set(key, p)
+  }
+  return _cache.get(key)
+}
+
 export async function processDocument(documentId: string): Promise<{ summary: string; quiz: QuizQuestion[] }> {
-  return request("/process-document", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ document_id: documentId }),
-  })
+  return cached(`process-document:${documentId}`, () =>
+    request("/process-document", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ document_id: documentId }),
+    })
+  )
 }
 
 export async function generateCards(documentId: string): Promise<{ flashcards: Flashcard[] }> {
-  return request("/generate-cards", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ document_id: documentId }),
-  })
+  return cached(`generate-cards:${documentId}`, () =>
+    request("/generate-cards", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ document_id: documentId }),
+    })
+  )
 }
 
 export async function askQuestion(

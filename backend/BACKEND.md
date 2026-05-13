@@ -45,12 +45,14 @@ Entry point. Defines the FastAPI app and all endpoints.
 
 **`POST /process-document`** — generate summary + quiz for an existing document.
 - Body: `{"document_id": "uuid"}`
-- Fetches `content` from `documents` table, sends to Gemini 3.1 Flash Lite.
+- Checks `documents.summary` + `documents.quiz` cache first — returns instantly if populated.
+- On cache miss: fetches `content`, calls Gemini, saves result to cache, returns result.
 - Returns `{"summary": str, "quiz": [{"question", "options", "answer"}, ...]}`
 
 **`POST /generate-cards`** — generate 10 flashcards for an existing document.
 - Body: `{"document_id": "uuid"}`
-- Fetches `content` from `documents` table, sends to Gemini 3.1 Flash Lite.
+- Checks `documents.flashcards` cache first — returns instantly if populated.
+- On cache miss: fetches `content`, calls Gemini, saves result to cache, returns result.
 - Returns `{"flashcards": [{"question": str, "answer": str}, ...]}`
 
 **`POST /ask`** — RAG-powered Q&A with page citations.
@@ -114,7 +116,9 @@ Supabase (PostgreSQL + pgvector) interactions.
 | `save_document_metadata(user_id, filename, content)` | Inserts into `documents`. Returns inserted row list or `None` on error. |
 | `get_user_documents(user_id)` | Returns `[{id, filename, created_at}]` for a user, newest first. Returns `[]` on error. |
 | `get_document_content(document_id)` | Fetches the `content` field of a document by its UUID. Returns `str` or `None`. |
-| `search_chunks(document_id, query_embedding, match_count, match_threshold)` | Calls `match_documents` RPC with a query embedding. Defaults: top 5 chunks, 0.5 similarity threshold. Returns list of matching chunks with `content`, `metadata`, `similarity`. |
+| `get_document_cache(document_id)` | Returns `{"summary", "quiz", "flashcards"}` from the documents row. Returns `None` on error. Used by AI endpoints to skip re-generation. |
+| `save_document_cache(document_id, data)` | Updates AI cache columns (`summary`, `quiz`, `flashcards`) on an existing document row. `data` is a partial dict with only the keys to update. Returns `True`/`False`. |
+| `search_chunks(document_id, query_embedding, match_count, match_threshold)` | Calls `match_documents` RPC with a query embedding. Defaults: top 5 chunks, 0.3 similarity threshold. Returns list of matching chunks with `content`, `metadata`, `similarity`. |
 | `save_document_chunks(document_id, chunks)` | Batch-inserts into `document_chunks`. Each chunk must have `content`, `metadata`, and `embedding` keys. Returns `True`/`False`. |
 
 **Supabase tables:**
@@ -126,6 +130,9 @@ Supabase (PostgreSQL + pgvector) interactions.
 | `user_id` | uuid | FK → auth.users |
 | `filename` | text | UUID-prefixed S3 key |
 | `content` | text | Full extracted text |
+| `summary` | text | AI-generated summary (cached) |
+| `quiz` | jsonb | AI-generated quiz questions (cached) |
+| `flashcards` | jsonb | AI-generated flashcards (cached) |
 | `embedding` | vector | Unused (reserved) |
 | `created_at` | timestamptz | Auto |
 

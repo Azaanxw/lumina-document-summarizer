@@ -67,6 +67,26 @@ def get_user_documents(user_id: str) -> list[dict]:
         print(f"Document List Error: {e}")
         return []
 
+def get_document_cache(document_id: str) -> dict | None:
+    """Returns cached AI columns (summary, quiz, flashcards) for a document."""
+    supabase = get_supabase_client()
+    try:
+        response = supabase.table("documents").select("summary, quiz, flashcards").eq("id", document_id).single().execute()
+        return response.data  # type: ignore
+    except Exception as e:
+        print(f"Get Cache Error: {e}")
+        return None
+
+def save_document_cache(document_id: str, data: dict) -> bool:
+    """Updates AI cache columns on an existing document row."""
+    supabase = get_supabase_client()
+    try:
+        supabase.table("documents").update(data).eq("id", document_id).execute()
+        return True
+    except Exception as e:
+        print(f"Save Cache Error: {e}")
+        return False
+
 def save_document_chunks(document_id: str, chunks: list[dict]) -> bool:
     """Batch-inserts page-anchored chunks with embeddings into document_chunks."""
     supabase = get_supabase_client()
