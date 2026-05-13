@@ -56,6 +56,10 @@ export async function askQuestion(
   })
 }
 
+export async function getPdfUrl(documentId: string): Promise<{ url: string }> {
+  return request(`/documents/${documentId}/pdf-url`)
+}
+
 export async function lookupWord(word: string): Promise<{
   word: string
   phonetic: string

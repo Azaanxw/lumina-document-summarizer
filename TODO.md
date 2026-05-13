@@ -49,13 +49,69 @@
 
 
 ## Phase 4: Frontend & UI 🎨
-- [ ] Basic React/Next.js dashboard
-- [ ] File upload drag-and-drop component
-- [ ] Real-time summary display
+- [x] Basic React/Next.js dashboard
+- [x] File upload drag-and-drop component
+- [x] PDF preview with react-pdf (replaces iframe — enables text selection + dictionary)
+- [x] Split layout — PDF left, study tools right
+- [x] Dictionary popup on PDF text selection
+- [x] Citation badge click → scroll PDF to page + highlight snippet
+- [x] Real-time summary display
+- [ ] Supabase caching of AI content (summary/quiz/flashcards) per document — avoid re-generation on revisit
+- [ ] Error boundary / empty-state polish across all views
+- [ ] Loading skeletons for all async data fetches
 
 -------------------------------------------------
 
-## Phase 5: Production & Polish 🛡️
+## Phase 5: Authentication & User Accounts
+
+### Onboarding Flow (Guest Upload → Deferred Auth)
+The user never hits a login wall. They upload first, then are nudged to save.
+
+1. User lands on `/` → sees upload zone, no login required
+2. User drops a PDF → upload starts immediately, document created with `user_id = NULL` (guest)
+3. User is redirected to `/document/{id}` — AI starts generating in the background
+4. A "Save this document" banner/modal appears asking them to sign in or create an account
+5. If they log in → frontend calls `POST /documents/{id}/claim` → document assigned to their account
+6. If they dismiss → they can still use the document in the current session (not saved)
+7. Unclaimed documents (user_id IS NULL, older than 24h) are automatically deleted by a cleanup job
+
+### Database Changes
+- [ ] Make `documents.user_id` nullable — allow guest uploads with no user
+- [ ] Add Supabase pg_cron job: delete documents where `user_id IS NULL AND created_at < NOW() - INTERVAL '24 hours'`
+- [ ] Enable RLS on `documents` and `document_chunks` — users can only access their own rows
+- [ ] Write RLS policies: `user_id = auth.uid()` for SELECT/DELETE; allow INSERT with `user_id = NULL`
+
+### Supabase Auth Setup
+- [ ] Enable Email/Password auth provider in Supabase dashboard
+- [ ] Install `@supabase/supabase-js` + `@supabase/ssr` in frontend
+- [ ] Add `NEXT_PUBLIC_SUPABASE_URL` + `NEXT_PUBLIC_SUPABASE_ANON_KEY` to `.env.local`
+- [ ] Create `lib/supabase.ts` — browser Supabase client via `createBrowserClient`
+
+### Backend Auth
+- [ ] Add `POST /documents/{id}/claim` endpoint — reads JWT from `Authorization` header, sets `user_id` where currently NULL
+- [ ] Replace `MOCK_USER_ID` with FastAPI JWT dependency — reads + validates Supabase JWT
+- [ ] Pass verified `user_id` into `/upload`, `/documents`, `/process-document`, `/generate-cards`, `/ask`
+- [ ] Return 401 for protected endpoints when token is missing/invalid
+- [ ] `/upload` stays unauthenticated — accepts optional Bearer token; sets `user_id` if present, otherwise NULL
+
+### Frontend Auth
+- [ ] Auth modal component with Login / Sign Up tabs (email + password via Supabase)
+- [ ] Show auth modal automatically on document page when `user_id` is unclaimed
+- [ ] After login, call `/claim`, then dismiss modal and show "Document saved" confirmation
+- [ ] `middleware.ts` — redirect unauthenticated users away from `/dashboard`
+- [ ] Pass `Authorization: Bearer <token>` in all `lib/api.ts` calls when session exists
+- [ ] Dashboard: only show logged-in user's documents (filter out guests)
+- [ ] Header: show user email + sign out button when authenticated
+
+### Rate Limiting
+- [ ] Per-user rate limit on `/process-document` and `/generate-cards` — max 10 calls/hour
+- [ ] Per-user rate limit on `/ask` — max 30 questions/hour
+- [ ] Return `429 Too Many Requests` with `Retry-After` header when limit hit
+- [ ] Show rate limit error in UI with friendly message + countdown
+
+-------------------------------------------------
+
+## Phase 6: Production & Polish 🛡️
 
 ### Infrastructure & Deployment
 - [ ] Containerize backend using Docker
@@ -69,6 +125,7 @@
 
 ### Security & Auth
 - [ ] Implement FastAPI JWT dependency for auth guarding (replace MOCK_USER_ID)
+- [ ] Prompt Engineering to prevent misabuse
 - [ ] Configure strict CORS policy — whitelist Vercel frontend domain only
 - [ ] Enable Supabase RLS policies for all tables (documents, document_chunks, profiles)
 - [ ] Rotate all API keys and move secrets to AWS Secrets Manager

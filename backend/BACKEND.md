@@ -60,6 +60,11 @@ Entry point. Defines the FastAPI app and all endpoints.
 - Passes chunks + question to Gemini with a grounded-only prompt.
 - Returns `{"answer": str, "citations": [{"page_number": int, "snippet": str}]}`
 
+**`GET /documents/{document_id}/pdf`** — PDF proxy (avoids S3 CORS).
+- Downloads the PDF from S3 server-side and streams bytes back to the client.
+- Returns the raw PDF with `Content-Type: application/pdf`.
+- Frontend react-pdf points at this endpoint instead of the S3 presigned URL.
+
 **`GET /dictionary/{word}`** — Free Dictionary API proxy.
 - Calls `api.dictionaryapi.dev` server-side to avoid frontend CORS issues.
 - Returns `{"word": str, "phonetic": str, "definition": str, "example": str, "synonyms": list[str]}`
@@ -145,7 +150,8 @@ AWS S3 interactions.
 |---|---|
 | `get_s3_client()` | Creates boto3 S3 client from `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`. |
 | `upload_to_s3(file_obj, filename)` | Streams file to S3 bucket. Sets `ContentType: application/pdf`. Returns S3 key or `None`. |
-| `create_presigned_url(filename, expiration)` | Generates a temporary signed URL (default 1-hour). Not yet wired to an endpoint. |
+| `download_from_s3(filename)` | Downloads a file from S3 and returns raw bytes. Used by the PDF proxy endpoint. Returns `None` on error. |
+| `create_presigned_url(filename, expiration)` | Generates a temporary signed URL (default 1-hour). |
 
 ---
 

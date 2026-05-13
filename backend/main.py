@@ -1,8 +1,9 @@
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import Response
 from pydantic import BaseModel
-from s3_utils import upload_to_s3
-from db_utils import save_document_metadata, save_document_chunks, get_document_content, search_chunks, get_user_documents
+from s3_utils import upload_to_s3, create_presigned_url, download_from_s3
+from db_utils import save_document_metadata, save_document_chunks, get_document_content, search_chunks, get_user_documents, get_document_filename
 from dotenv import load_dotenv
 from pdf_utils import extract_text_from_pdf, extract_chunks_from_pdf
 from embedding_utils import embed_texts
@@ -31,7 +32,7 @@ class AskRequest(BaseModel):
     question: str
 
 @app.get("/documents")
-async def list_documents():
+def list_documents():
     docs = get_user_documents(MOCK_USER_ID)
     return {"documents": docs}
 
@@ -84,7 +85,7 @@ async def upload_pdf(file: UploadFile = File(...)):
     }
 
 @app.post("/process-document")
-async def process_document(req: DocumentRequest):
+def process_document(req: DocumentRequest):
     content = get_document_content(req.document_id)
     if not content:
         raise HTTPException(status_code=404, detail="Document not found")
@@ -96,7 +97,7 @@ async def process_document(req: DocumentRequest):
     return result
 
 @app.post("/generate-cards")
-async def generate_cards(req: DocumentRequest):
+def generate_cards(req: DocumentRequest):
     content = get_document_content(req.document_id)
     if not content:
         raise HTTPException(status_code=404, detail="Document not found")
@@ -108,7 +109,7 @@ async def generate_cards(req: DocumentRequest):
     return result
 
 @app.post("/ask")
-async def ask(req: AskRequest):
+def ask(req: AskRequest):
     query_embedding = embed_texts([req.question])[0]
     chunks = search_chunks(req.document_id, query_embedding)
 
@@ -120,6 +121,26 @@ async def ask(req: AskRequest):
         raise HTTPException(status_code=500, detail="Failed to generate answer")
 
     return result
+
+@app.get("/documents/{document_id}/pdf-url")
+def get_pdf_url(document_id: str):
+    filename = get_document_filename(document_id)
+    if not filename:
+        raise HTTPException(status_code=404, detail="Document not found")
+    url = create_presigned_url(filename)
+    if not url:
+        raise HTTPException(status_code=500, detail="Failed to generate PDF URL")
+    return {"url": url}
+
+@app.get("/documents/{document_id}/pdf")
+def get_pdf_proxy(document_id: str):
+    filename = get_document_filename(document_id)
+    if not filename:
+        raise HTTPException(status_code=404, detail="Document not found")
+    file_bytes = download_from_s3(filename)
+    if not file_bytes:
+        raise HTTPException(status_code=500, detail="Failed to download PDF")
+    return Response(content=file_bytes, media_type="application/pdf")
 
 @app.get("/dictionary/{word}")
 async def dictionary(word: str):

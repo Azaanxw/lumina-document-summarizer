@@ -16,9 +16,11 @@ interface Message {
 
 interface QAChatProps {
   documentId: string
+  compact?: boolean
+  onCitationClick?: (pageNumber: number, snippet: string) => void
 }
 
-export function QAChat({ documentId }: QAChatProps) {
+export function QAChat({ documentId, compact, onCitationClick }: QAChatProps) {
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState("")
   const [loading, setLoading] = useState(false)
@@ -45,7 +47,7 @@ export function QAChat({ documentId }: QAChatProps) {
 
   return (
     <div className="flex flex-col gap-4 py-6">
-      <ScrollArea className="h-[420px] rounded-xl border bg-muted/20 p-4">
+      <ScrollArea className={compact ? "h-44 rounded-xl border bg-muted/20 p-4" : "h-[420px] rounded-xl border bg-muted/20 p-4"}>
         {messages.length === 0 && !loading && (
           <p className="text-sm text-muted-foreground text-center py-16">
             Ask anything about this document.
@@ -69,7 +71,12 @@ export function QAChat({ documentId }: QAChatProps) {
                   {msg.citations.length > 0 && (
                     <div className="flex flex-wrap gap-1.5 px-1">
                       {msg.citations.map((c, j) => (
-                        <CitationBadge key={j} pageNumber={c.page_number} snippet={c.snippet} />
+                        <CitationBadge
+                          key={j}
+                          pageNumber={c.page_number}
+                          snippet={c.snippet}
+                          onClick={onCitationClick ? () => onCitationClick(c.page_number, c.snippet) : undefined}
+                        />
                       ))}
                     </div>
                   )}

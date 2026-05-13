@@ -47,6 +47,16 @@ def search_chunks(document_id: str, query_embedding: list[float], match_count: i
         print(f"Chunk Search Error: {e}")
         return []
 
+def get_document_filename(document_id: str) -> str | None:
+    """Fetches the S3 filename for a document by its ID."""
+    supabase = get_supabase_client()
+    try:
+        response = supabase.table("documents").select("filename").eq("id", document_id).single().execute()
+        return response.data["filename"]  # type: ignore
+    except Exception as e:
+        print(f"Document Filename Fetch Error: {e}")
+        return None
+
 def get_user_documents(user_id: str) -> list[dict]:
     """Returns all documents for a user, ordered by creation date descending."""
     supabase = get_supabase_client()

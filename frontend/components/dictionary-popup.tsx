@@ -35,8 +35,8 @@ export function DictionaryPopup() {
       setVisible(false)
       setEntry(null)
 
-      const x = rect.left + rect.width / 2 + window.scrollX
-      const y = rect.bottom + window.scrollY + 8
+      const x = rect.left + rect.width / 2
+      const y = rect.bottom + 8
       setPos({ x, y })
 
       lookupWord(word)
@@ -73,7 +73,7 @@ export function DictionaryPopup() {
     <div
       ref={popupRef}
       style={{ left: pos.x, top: pos.y, transform: "translateX(-50%)" }}
-      className="absolute z-50 w-72 rounded-xl border bg-popover p-4 shadow-lg text-popover-foreground"
+      className="fixed z-50 w-72 rounded-xl border bg-popover p-4 shadow-lg text-popover-foreground"
     >
       <button
         onClick={() => setVisible(false)}

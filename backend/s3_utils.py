@@ -30,6 +30,17 @@ async def upload_to_s3(file_obj, filename: str):
         print(f"S3 Upload Error: {e}")
         return None
 
+def download_from_s3(filename: str) -> bytes | None:
+    """Downloads a file from S3 and returns its raw bytes."""
+    s3 = get_s3_client()
+    bucket_name = os.getenv("AWS_S3_BUCKET")
+    try:
+        response = s3.get_object(Bucket=bucket_name, Key=filename)
+        return response["Body"].read()
+    except ClientError as e:
+        print(f"S3 Download Error: {e}")
+        return None
+
 def create_presigned_url(filename: str, expiration: int = 3600):
     """Generates a temporary, secure URL to view a private PDF (Valid for 1 hour)."""
     s3 = get_s3_client()
