@@ -74,6 +74,19 @@ function findMatchedItemIndices(
     // No fuzzy fallback — partial matches produce too many false positives.
   }
 
+  // Fill in punctuation-only items that sit between matched items.
+  // Characters like "–" and "-" normalize to "" so they never enter the token stream,
+  // but they visually belong inside the highlighted run (e.g. "60–65%", "three-second").
+  if (matched.size > 1) {
+    const sorted = [...matched].sort((a, b) => a - b)
+    for (let i = 0; i < sorted.length - 1; i++) {
+      const lo = sorted[i], hi = sorted[i + 1]
+      for (const { str, idx } of pageItems) {
+        if (idx > lo && idx < hi && !normWord(str)) matched.add(idx)
+      }
+    }
+  }
+
   return matched
 }
 
