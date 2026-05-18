@@ -11,8 +11,7 @@ import { PdfViewer } from "@/components/pdf-viewer"
 import { DictionaryPopup } from "@/components/dictionary-popup"
 import { getCacheStatus, generateCards, type Flashcard } from "@/lib/api"
 import { Button } from "@/components/ui/button"
-import { ChevronLeft, Layers, Loader2 } from "lucide-react"
-import { Separator } from "@/components/ui/separator"
+import { ChevronLeft, GripHorizontal, Layers, Loader2 } from "lucide-react"
 
 export default function DocumentPage() {
   const router = useRouter()
@@ -22,6 +21,7 @@ export default function DocumentPage() {
   const [flashcardsUnlocked, setFlashcardsUnlocked] = useState(false)
   const [generatingFlashcards, setGeneratingFlashcards] = useState(false)
   const [preloadedCards, setPreloadedCards] = useState<Flashcard[] | null>(null)
+  const [askHeight, setAskHeight] = useState(280)
 
   useEffect(() => {
     getCacheStatus(id).then((s) => {
@@ -31,6 +31,31 @@ export default function DocumentPage() {
 
   function onCitationClick(pageNumber: number, snippets: string[]) {
     pdfRef.current?.scrollToPage(pageNumber, snippets)
+  }
+
+  function handleAskDragStart(e: React.MouseEvent) {
+    e.preventDefault()
+    const startY = e.clientY
+    const startHeight = askHeight
+
+    document.body.style.cursor = "ns-resize"
+    document.body.style.userSelect = "none"
+
+    function onMove(e: MouseEvent) {
+      // dragging up (negative delta) increases height
+      const newHeight = Math.min(Math.max(startHeight + (startY - e.clientY), 120), 640)
+      setAskHeight(newHeight)
+    }
+
+    function onUp() {
+      document.body.style.cursor = ""
+      document.body.style.userSelect = ""
+      document.removeEventListener("mousemove", onMove)
+      document.removeEventListener("mouseup", onUp)
+    }
+
+    document.addEventListener("mousemove", onMove)
+    document.addEventListener("mouseup", onUp)
   }
 
   async function handleGenerateFlashcards() {
@@ -101,9 +126,16 @@ export default function DocumentPage() {
             </Tabs>
           </div>
 
+          {/* Drag handle — resize the Ask panel */}
+          <div
+            onMouseDown={handleAskDragStart}
+            className="shrink-0 border-t h-3 flex items-center justify-center cursor-ns-resize hover:bg-accent/60 group transition-colors"
+          >
+            <GripHorizontal className="size-3 text-muted-foreground/30 group-hover:text-muted-foreground/60 transition-colors" />
+          </div>
+
           {/* Ask chatbox (pinned to bottom) */}
-          <Separator />
-          <div className="shrink-0 h-[280px] flex flex-col gap-2 px-5 pt-3 pb-4">
+          <div className="shrink-0 flex flex-col gap-2 px-5 pt-3 pb-4" style={{ height: askHeight }}>
             <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide shrink-0">Ask</p>
             <QAChat documentId={id} onCitationClick={onCitationClick} />
           </div>

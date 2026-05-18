@@ -85,16 +85,18 @@ export function FlashcardDeck({ documentId, initialCards }: FlashcardDeckProps) 
     <div className="flex flex-col items-center gap-8 py-8">
       <div className="flex w-full items-center justify-between">
         <p className="text-sm text-muted-foreground">{index + 1} / {cards.length}</p>
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={handleClearCache}
-          disabled={clearing}
-          className="h-7 gap-1.5 px-2 text-xs text-muted-foreground hover:text-foreground"
-        >
-          <RotateCcw className={`size-3 ${clearing ? "animate-spin" : ""}`} />
-          Clear cache
-        </Button>
+        {process.env.NODE_ENV === "development" && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={handleClearCache}
+            disabled={clearing}
+            className="h-7 gap-1.5 px-2 text-xs text-muted-foreground hover:text-foreground"
+          >
+            <RotateCcw className={`size-3 ${clearing ? "animate-spin" : ""}`} />
+            Clear cache
+          </Button>
+        )}
       </div>
 
       <div

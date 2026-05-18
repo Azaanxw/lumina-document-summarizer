@@ -84,16 +84,18 @@ export function SummaryView({ documentId }: SummaryViewProps) {
       <section className="space-y-3">
         <div className="flex items-center justify-between gap-2">
           <h2 className="text-lg font-semibold">Summary</h2>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={handleClearCache}
-            disabled={clearing}
-            className="h-7 gap-1.5 px-2 text-xs text-muted-foreground hover:text-foreground"
-          >
-            <RotateCcw className={`size-3 ${clearing ? "animate-spin" : ""}`} />
-            Clear cache
-          </Button>
+          {process.env.NODE_ENV === "development" && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleClearCache}
+              disabled={clearing}
+              className="h-7 gap-1.5 px-2 text-xs text-muted-foreground hover:text-foreground"
+            >
+              <RotateCcw className={`size-3 ${clearing ? "animate-spin" : ""}`} />
+              Clear cache
+            </Button>
+          )}
         </div>
         <div className="space-y-2">
           <StructuredSummary text={summary} />

@@ -60,7 +60,7 @@
 - [x] Error boundary / empty-state polish across all views
 - [x] Loading skeletons for all async data fetches
 - [x] User experience bug fixes 
-- [ ] Better UI experience 
+- [x] Better UI experience 
 
 -------------------------------------------------
 

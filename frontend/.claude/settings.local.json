@@ -22,7 +22,10 @@
       "Bash(Get-ChildItem *)",
       "mcp__supabase__apply_migration",
       "Bash(Select-Object FullName)",
-      "mcp__ide__getDiagnostics"
+      "mcp__ide__getDiagnostics",
+      "Bash(Select-String -Pattern \"DictionaryPopup\" -List)",
+      "Bash(Select-Object Path)",
+      "Bash(Get-Unique)"
     ]
   }
 }
