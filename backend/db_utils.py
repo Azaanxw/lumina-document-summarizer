@@ -155,3 +155,20 @@ def save_document_chunks(document_id: str, chunks: list[dict]) -> bool:
     except Exception as e:
         print(f"Chunk Insert Error: {e}")
         return False
+
+def verify_document_owner(document_id: str, user_id: str) -> bool:
+    """Returns True if the document exists and belongs to the given user."""
+    supabase = get_supabase_client()
+    try:
+        response = (
+            supabase.table("documents")
+            .select("id")
+            .eq("id", document_id)
+            .eq("user_id", user_id)
+            .maybe_single()
+            .execute()
+        )
+        return response is not None and response.data is not None  # type: ignore
+    except Exception as e:
+        print(f"Ownership Check Error: {e}")
+        return False

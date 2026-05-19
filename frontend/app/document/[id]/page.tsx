@@ -10,12 +10,12 @@ import { QAChat } from "@/components/qa-chat"
 import { PdfViewer } from "@/components/pdf-viewer"
 import { DictionaryPopup } from "@/components/dictionary-popup"
 import { NudgeBanner } from "@/components/nudge-banner"
-import { getCacheStatus, generateCards, deleteAccount, type Flashcard } from "@/lib/api"
+import { getCacheStatus, generateCards, deleteAccount, type Flashcard, AuthError } from "@/lib/api"
 import { supabase } from "@/lib/supabase"
 import { Button } from "@/components/ui/button"
 import { UserMenu } from "@/components/user-menu"
 import Image from "next/image"
-import { ChevronLeft, GripHorizontal, Layers, Loader2, User } from "lucide-react"
+import { ChevronLeft, GripHorizontal, Layers, Loader2, Lock, LogIn, User } from "lucide-react"
 import { AuthModal } from "@/components/auth-modal"
 import { toast } from "sonner"
 
@@ -32,6 +32,9 @@ export default function DocumentPage() {
   const [userEmail, setUserEmail] = useState<string | null>(null)
   const [isAnonymous, setIsAnonymous] = useState(false)
   const [showGuestModal, setShowGuestModal] = useState(false)
+  const [accessError, setAccessError] = useState<"unauthenticated" | "forbidden" | null>(null)
+  const [showSignInModal, setShowSignInModal] = useState(false)
+  const [checking, setChecking] = useState(true)
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
@@ -66,9 +69,15 @@ export default function DocumentPage() {
   }
 
   useEffect(() => {
-    getCacheStatus(id).then((s) => {
-      if (s.has_flashcards) setFlashcardsUnlocked(true)
-    }).catch(() => {})
+    setChecking(true)
+    getCacheStatus(id)
+      .then((s) => { if (s.has_flashcards) setFlashcardsUnlocked(true) })
+      .catch((err) => {
+        if (err instanceof AuthError) {
+          setAccessError(err.status === 401 ? "unauthenticated" : "forbidden")
+        }
+      })
+      .finally(() => setChecking(false))
   }, [id])
 
   function onCitationClick(pageNumber: number, snippets: string[]) {
@@ -115,7 +124,7 @@ export default function DocumentPage() {
   }
 
   return (
-    <div className="flex flex-col h-svh overflow-hidden">
+    <div className="relative flex flex-col h-svh overflow-hidden">
       {/* Header */}
       <header className="flex items-center gap-3 px-4 py-2 border-b shrink-0">
         <Button variant="ghost" size="sm" onClick={() => router.push("/dashboard")}>
@@ -163,7 +172,7 @@ export default function DocumentPage() {
 
         {/* Left — PDF viewer */}
         <div className="w-2/5 shrink-0 border-r overflow-hidden h-full">
-          <PdfViewer documentId={id} ref={pdfRef} />
+          {!checking && !accessError && <PdfViewer documentId={id} ref={pdfRef} />}
         </div>
 
         {/* Right — study tools + ask */}
@@ -222,6 +231,67 @@ export default function DocumentPage() {
       </div>
 
       <DictionaryPopup />
+
+      {/* Access denied overlay */}
+      {accessError && (
+        <div className="absolute inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm">
+          <div className="bg-card border rounded-2xl shadow-xl p-8 max-w-md w-full mx-4 flex flex-col items-center gap-4 text-center">
+            <div className="size-14 rounded-full bg-muted flex items-center justify-center">
+              {accessError === "forbidden" && !isAnonymous
+                ? <Lock className="size-7 text-muted-foreground" />
+                : <LogIn className="size-7 text-muted-foreground" />
+              }
+            </div>
+
+            <h2 className="text-xl font-semibold">Private document</h2>
+
+            {accessError === "forbidden" && !isAnonymous ? (
+              <>
+                <p className="text-sm text-muted-foreground">
+                  You can only view documents you've uploaded. This one belongs to a different account.
+                </p>
+                <Button className="w-full" onClick={() => router.push("/dashboard")}>
+                  View your documents
+                </Button>
+              </>
+            ) : (
+              <>
+                <p className="text-sm text-muted-foreground">
+                  {accessError === "forbidden"
+                    ? "You're browsing as a guest. Sign in to check if this document belongs to your account."
+                    : "You can only view documents you've uploaded. Sign in to access your documents."
+                  }
+                </p>
+                <Button className="w-full" onClick={() => setShowSignInModal(true)}>
+                  Sign In
+                </Button>
+              </>
+            )}
+
+            <Button variant="ghost" size="sm" onClick={() => router.push("/")}>
+              Go back home
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {/* Sign-in modal — check document access after auth to decide where to navigate */}
+      {showSignInModal && (
+        <AuthModal
+          mode="signin"
+          onSuccess={async () => {
+            setShowSignInModal(false)
+            try {
+              const s = await getCacheStatus(id)
+              setAccessError(null)
+              if (s.has_flashcards) setFlashcardsUnlocked(true)
+            } catch {
+              router.push("/dashboard?msg=no_access")
+            }
+          }}
+          onDismiss={() => setShowSignInModal(false)}
+        />
+      )}
     </div>
   )
 }

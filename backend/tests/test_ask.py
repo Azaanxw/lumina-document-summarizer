@@ -7,11 +7,12 @@ CHUNKS = [{"content": "Paris is the capital.", "metadata": {"page_number": 1}}]
 ANSWER = {"answer": "Paris", "citations": [{"page_number": 1, "snippet": "Paris is the capital."}]}
 
 
-def test_ask_returns_answer_with_citations(client):
-    with patch("main.embed_texts", return_value=[[0.1] * 1536]), \
+def test_ask_returns_answer_with_citations(authed_client):
+    with patch("main.verify_document_owner", return_value=True), \
+         patch("main.embed_texts", return_value=[[0.1] * 1536]), \
          patch("main.search_chunks", return_value=CHUNKS), \
          patch("main.generate_answer", return_value=ANSWER):
-        response = client.post("/ask", json={"document_id": "doc-1", "question": "Capital?"})
+        response = authed_client.post("/ask", json={"document_id": "doc-1", "question": "Capital?"})
 
     assert response.status_code == 200
     data = response.json()
@@ -19,35 +20,28 @@ def test_ask_returns_answer_with_citations(client):
     assert data["citations"][0]["page_number"] == 1
 
 
-def test_ask_returns_404_when_no_chunks_found(client):
-    with patch("main.embed_texts", return_value=[[0.1] * 1536]), \
+def test_ask_returns_404_when_no_chunks_found(authed_client):
+    with patch("main.verify_document_owner", return_value=True), \
+         patch("main.embed_texts", return_value=[[0.1] * 1536]), \
          patch("main.search_chunks", return_value=[]):
-        response = client.post("/ask", json={"document_id": "doc-1", "question": "What?"})
+        response = authed_client.post("/ask", json={"document_id": "doc-1", "question": "What?"})
 
     assert response.status_code == 404
 
 
-def test_ask_returns_500_when_generate_answer_fails(client):
-    with patch("main.embed_texts", return_value=[[0.1] * 1536]), \
+def test_ask_returns_500_when_generate_answer_fails(authed_client):
+    with patch("main.verify_document_owner", return_value=True), \
+         patch("main.embed_texts", return_value=[[0.1] * 1536]), \
          patch("main.search_chunks", return_value=CHUNKS), \
          patch("main.generate_answer", return_value=None):
-        response = client.post("/ask", json={"document_id": "doc-1", "question": "What?"})
+        response = authed_client.post("/ask", json={"document_id": "doc-1", "question": "What?"})
 
     assert response.status_code == 500
 
 
-def test_ask_uses_document_id_as_rate_limit_key_for_unauthenticated(client):
-    with patch("main.embed_texts", return_value=[[0.1] * 1536]), \
-         patch("main.search_chunks", return_value=CHUNKS), \
-         patch("main.generate_answer", return_value=ANSWER):
-        client.post("/ask", json={"document_id": "key-doc", "question": "Q?"})
-
-    assert "key-doc" in main._question_timestamps
-    assert len(main._question_timestamps["key-doc"]) == 1
-
-
-def test_ask_uses_user_id_as_rate_limit_key_for_authenticated(authed_client):
-    with patch("main.embed_texts", return_value=[[0.1] * 1536]), \
+def test_ask_uses_user_id_as_rate_limit_key(authed_client):
+    with patch("main.verify_document_owner", return_value=True), \
+         patch("main.embed_texts", return_value=[[0.1] * 1536]), \
          patch("main.search_chunks", return_value=CHUNKS), \
          patch("main.generate_answer", return_value=ANSWER):
         authed_client.post("/ask", json={"document_id": "doc-1", "question": "Q?"})
@@ -56,7 +50,7 @@ def test_ask_uses_user_id_as_rate_limit_key_for_authenticated(authed_client):
     assert len(main._question_timestamps[REAL_USER_ID]) == 1
 
 
-def test_ask_openai_fallback_used_when_gemini_raises(client):
+def test_ask_openai_fallback_used_when_gemini_raises(authed_client):
     from unittest.mock import MagicMock
     import json
 
@@ -68,11 +62,26 @@ def test_ask_openai_fallback_used_when_gemini_raises(client):
         choices=[MagicMock(message=MagicMock(content=json.dumps(fallback_answer)))]
     )
 
-    with patch("main.embed_texts", return_value=[[0.1] * 1536]), \
+    with patch("main.verify_document_owner", return_value=True), \
+         patch("main.embed_texts", return_value=[[0.1] * 1536]), \
          patch("main.search_chunks", return_value=CHUNKS), \
          patch("gemini_utils.genai.Client", return_value=mock_gemini), \
          patch("gemini_utils.OpenAI", return_value=mock_openai):
-        response = client.post("/ask", json={"document_id": "doc-1", "question": "Q?"})
+        response = authed_client.post("/ask", json={"document_id": "doc-1", "question": "Q?"})
 
     assert response.status_code == 200
     assert response.json()["answer"] == "Fallback answer"
+
+
+# --- Auth & ownership ---
+
+def test_ask_requires_auth(client):
+    response = client.post("/ask", json={"document_id": "doc-1", "question": "Q?"})
+    assert response.status_code == 401
+
+
+def test_ask_returns_403_for_wrong_owner(authed_client):
+    with patch("main.verify_document_owner", return_value=False):
+        response = authed_client.post("/ask", json={"document_id": "doc-1", "question": "Q?"})
+    assert response.status_code == 403
+    assert response.json()["detail"] == "forbidden"

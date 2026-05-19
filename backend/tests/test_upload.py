@@ -124,3 +124,20 @@ def test_upload_returns_500_when_db_save_fails(authed_client):
 
     assert response.status_code == 500
     assert "Failed to save to database" in response.json()["detail"]
+
+
+def test_upload_rejects_oversized_file(authed_client):
+    oversized = b"x" * (20 * 1024 * 1024 + 1)
+    with patch("main.get_user_documents", return_value=[]), \
+         patch("main.get_profile", return_value={"document_quota": 4}):
+        response = _upload(authed_client, data=oversized)
+    assert response.status_code == 400
+    assert "20MB" in response.json()["detail"]
+
+
+def test_upload_rejects_invalid_magic_bytes(authed_client):
+    with patch("main.get_user_documents", return_value=[]), \
+         patch("main.get_profile", return_value={"document_quota": 4}):
+        response = _upload(authed_client, data=b"NOTAPDF")
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Invalid PDF file."

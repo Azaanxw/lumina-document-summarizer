@@ -147,7 +147,7 @@ Zero friction entry. The user gets full value from their first document before e
 
 ## Phase 6: Testing ✅
 
-### Backend (pytest) — 82 tests passing
+### Backend (pytest) — 93 tests passing
 - [x] Unit tests for `embedding_utils.py` — mock OpenAI client, assert chunk→vector shape and metadata
 - [x] Unit tests for `gemini_utils.py` — mock Gemini client, assert summary/quiz/flashcard schema
 - [x] Unit tests for `db_utils.py` — mock Supabase client, assert insert/select/delete calls
@@ -179,11 +179,12 @@ Zero friction entry. The user gets full value from their first document before e
 ## Phase 7: Production & Polish 🛡️
 
 ### Security & Auth (code changes — before deployment)
-- [ ] Enforce document ownership on all read/query endpoints — `/pdf`, `/pdf-url`, `/process-document`, `/generate-cards`, `/ask`, and cache endpoints currently accept any `document_id` with no ownership check; add `verify_document_owner(document_id, user_id)` in `db_utils.py` and return 403 if the authenticated user doesn't own the document
-- [ ] Harden file upload validation — current `content_type` check is header-only and spoofable; validate magic bytes (PDF starts with `%PDF-`) and enforce a max file size limit
-- [ ] Add HTTP security headers middleware — HSTS, `X-Frame-Options`, `X-Content-Type-Options`, CSP
-- [ ] Add global request rate limiting middleware (slowapi) to prevent brute-force
-- [ ] Prompt engineering to prevent misuse
+- [x] Enforce document ownership on all read/query endpoints — `verify_document_owner(document_id, user_id)` in `db_utils.py`; all document-scoped endpoints return 403 if the user doesn't own the document
+- [x] Harden file upload validation — magic byte check (`%PDF-`) + 20 MB max file size enforced server-side
+- [x] Add HTTP security headers middleware — HSTS, `X-Frame-Options`, `X-Content-Type-Options`, CSP, `Referrer-Policy`
+- [x] Add global request rate limiting middleware (slowapi) — `/upload` 20 req/min, `/ask` 60 req/min per IP
+- [x] Prompt injection prevention in `generate_answer` — grounded-only prompt with explicit rule against instruction override
+- [x] Access-denied UI overlay — typed `AuthError` (401/403) surfaces a clear overlay with sign-in or redirect CTA instead of a blank/broken page
 - [ ] Configure strict CORS policy — whitelist Vercel frontend domain only *(needs production domain — do after Vercel deploy)*
 - [ ] Rotate all API keys and move secrets to AWS Secrets Manager *(needs AWS infra — do after ECS deploy)*
 

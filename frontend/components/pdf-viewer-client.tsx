@@ -1,6 +1,7 @@
 "use client"
 
-import { useCallback, useEffect, useImperativeHandle, useRef, useState } from "react"
+import { useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react"
+import { supabase } from "@/lib/supabase"
 import { Document, Page, pdfjs } from "react-pdf"
 import "react-pdf/dist/Page/TextLayer.css"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -95,17 +96,27 @@ export function PdfViewer({ documentId, ref }: PdfViewerProps) {
   const [containerWidth, setContainerWidth] = useState(0)
   const [currentPage, setCurrentPage] = useState(1)
   const [highlight, setHighlight] = useState<{ page: number; texts: string[] } | null>(null)
-  // Set of itemIndex values to highlight on the cited page
   const [highlightedItems, setHighlightedItems] = useState<{ page: number; items: Set<number> } | null>(null)
+  const [authToken, setAuthToken] = useState<string | null>(null)
 
   const containerRef = useRef<HTMLDivElement>(null)
   const pageRefs = useRef<Map<number, HTMLDivElement>>(new Map())
-  // Text items per page, stored when onGetTextSuccess fires
   const pageTextItems = useRef<Map<number, Array<{ str: string; idx: number }>>>(new Map())
-  // Ref so callbacks can read the latest highlight without stale closure
   const highlightRef = useRef<{ page: number; texts: string[] } | null>(null)
 
-  const pdfUrl = `${process.env.NEXT_PUBLIC_API_URL}/documents/${documentId}/pdf`
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setAuthToken(session?.access_token ?? null)
+    })
+  }, [documentId])
+
+  const pdfFile = useMemo(() => {
+    if (!authToken) return null
+    return {
+      url: `${process.env.NEXT_PUBLIC_API_URL}/documents/${documentId}/pdf`,
+      httpHeaders: { Authorization: `Bearer ${authToken}` },
+    }
+  }, [documentId, authToken])
 
   // Keep ref in sync on every render (no dependency array — runs every render)
   useEffect(() => { highlightRef.current = highlight })
@@ -178,9 +189,9 @@ export function PdfViewer({ documentId, ref }: PdfViewerProps) {
   return (
     <div className="relative h-full">
       <div ref={containerRef} className="h-full overflow-y-auto bg-muted/30">
-        {containerWidth > 0 && (
+        {containerWidth > 0 && pdfFile && (
           <Document
-            file={pdfUrl}
+            file={pdfFile}
             onLoadSuccess={({ numPages }) => setNumPages(numPages)}
             loading={<Skeleton className="w-full h-64 rounded-none" />}
             error={<p className="p-4 text-sm text-destructive">Failed to load PDF.</p>}

@@ -39,14 +39,14 @@ def test_rate_limit_window_rolls_so_old_timestamps_expire():
     assert allowed is True
 
 
-def test_ask_returns_429_with_retry_after_when_rate_limited(client):
+def test_ask_returns_429_with_retry_after_when_rate_limited(authed_client):
     from unittest.mock import patch as upatch
+    REAL_USER_ID = "user-test-123"
     now = time.time()
-    main._question_timestamps["rate-doc"] = [now] * 20
+    main._question_timestamps[REAL_USER_ID] = [now] * 20
 
-    with upatch("main.embed_texts", return_value=[[0.1] * 1536]), \
-         upatch("main.search_chunks", return_value=[]):
-        response = client.post("/ask", json={"document_id": "rate-doc", "question": "Q?"})
+    with upatch("main.verify_document_owner", return_value=True):
+        response = authed_client.post("/ask", json={"document_id": "rate-doc", "question": "Q?"})
 
     assert response.status_code == 429
     detail = response.json()["detail"]

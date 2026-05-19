@@ -13,6 +13,13 @@ export class RateLimitError extends Error {
   }
 }
 
+export class AuthError extends Error {
+  constructor(public readonly status: 401 | 403) {
+    super(status === 401 ? "unauthenticated" : "forbidden")
+    this.name = "AuthError"
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Anonymous session — ensure every visitor has a Supabase session before upload
 // ---------------------------------------------------------------------------
@@ -54,6 +61,8 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     } catch {}
     throw new RateLimitError(retryAfter)
   }
+  if (res.status === 401) throw new AuthError(401)
+  if (res.status === 403) throw new AuthError(403)
   if (!res.ok) {
     const text = await res.text().catch(() => res.statusText)
     throw new Error(text || `Request failed: ${res.status}`)

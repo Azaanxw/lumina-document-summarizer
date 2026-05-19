@@ -13,9 +13,10 @@ import { UserMenu } from "@/components/user-menu"
 import { Skeleton } from "@/components/ui/skeleton"
 
 const MESSAGES: Record<string, { text: string; type: "success" | "error" | "default" }> = {
-  signed_in: { text: "Signed in successfully!", type: "success" },
-  signed_out: { text: "You've been signed out.", type: "default" },
+  signed_in:       { text: "Signed in successfully!", type: "success" },
+  signed_out:      { text: "You've been signed out.", type: "default" },
   account_deleted: { text: "Your account and all documents have been deleted.", type: "error" },
+  no_access:       { text: "You don't have access to view that document.", type: "error" },
 }
 
 function Notification() {

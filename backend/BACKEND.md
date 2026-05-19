@@ -32,7 +32,8 @@ backend/
     ├── test_s3_utils.py    # upload/download/presign/delete S3 helpers (async)
     ├── test_db_utils.py    # All db_utils functions — Supabase chain mocking
     ├── test_gemini_utils.py    # Gemini success, OpenAI fallback, both-fail paths
-    └── test_embedding_utils.py # embed_texts batch embedding
+    ├── test_embedding_utils.py # embed_texts batch embedding
+    └── test_security_headers.py # HTTP security headers present on all responses
 ```
 
 ---
@@ -44,7 +45,10 @@ backend/
 - **Upgrading**: `linkIdentity({ provider: 'google' })` or `updateUser({ email })` converts the anonymous session in-place — same `user_id`, documents are automatically preserved.
 - **Authenticated quota**: 4 documents (from `profiles.document_quota`). `documents_used` is incremented on upload (not incremented for anonymous uploads).
 - **JWT validation**: `get_current_user()` FastAPI dependency calls `supabase.auth.get_user(token)` and returns an `AuthUser(user_id, is_anonymous)` dataclass or `None`.
-- **Rate limiting**: `/ask` is limited to 20 questions/hour per `user_id` (anonymous or real), falling back to `document_id` if no auth.
+- **Rate limiting**: `/ask` is limited to 20 questions/hour per `user_id` (anonymous or real). Auth is now required on `/ask` so the fallback to `document_id` is no longer needed.
+- **Document ownership**: All document read/query endpoints verify the requesting user owns the document (`verify_document_owner`) and return 403 if not.
+- **Security headers**: HTTP middleware adds `X-Frame-Options`, `X-Content-Type-Options`, `Strict-Transport-Security`, `Referrer-Policy`, and `Content-Security-Policy` to every response.
+- **IP rate limiting**: `slowapi` middleware limits `/upload` to 20 req/min and `/ask` to 60 req/min per IP, as a second layer alongside the per-user question limit.
 
 ---
 
@@ -67,31 +71,35 @@ Entry point. Defines all endpoints, auth dependencies, and the in-memory rate li
 - Returns `{"documents": [{id, filename, created_at}, ...], "quota": {"used": int, "total": int}}`
 - Ordered by `created_at` descending.
 
-**`POST /upload`** *(requires auth — anonymous or real)*
+**`POST /upload`** *(requires auth — anonymous or real; 20 req/min IP limit)*
 1. 401 if no session at all.
 2. Quota check: anonymous → 1 doc max; real user → `profile.document_quota` (default 4).
-3. Extract full text + page-anchored chunks from PDF.
-4. Batch embed all chunks (OpenAI).
-5. Upload PDF to S3 with UUID-prefixed key.
-6. `save_document_metadata(user_id, ...)` — `user_id` always set (from anonymous or real session).
-7. If not anonymous: `increment_documents_used()`.
-8. `save_document_chunks()` — batch insert chunks + embeddings.
-9. Returns `{"message", "filename", "chunks_stored", "text_preview", "database_record"}`.
+3. Validates file size ≤ 20 MB and magic bytes start with `%PDF-`.
+4. Extract full text + page-anchored chunks from PDF.
+5. Batch embed all chunks (OpenAI).
+6. Upload PDF to S3 with UUID-prefixed key.
+7. `save_document_metadata(user_id, ...)` — `user_id` always set (from anonymous or real session).
+8. If not anonymous: `increment_documents_used()`.
+9. `save_document_chunks()` — batch insert chunks + embeddings.
+10. Returns `{"message", "filename", "chunks_stored", "text_preview", "database_record"}`.
 
-**`POST /process-document`** *(open)*
+**`POST /process-document`** *(requires auth — ownership verified)*
 - Body: `{"document_id": "uuid"}`
+- 403 if document doesn't belong to the authenticated user.
 - Checks `documents.summary` + `documents.quiz` cache — returns instantly if populated.
 - On cache miss: fetches `content`, calls Gemini, saves to cache.
 - Returns `{"summary": str, "quiz": [{question, options, answer}, ...]}`
 
-**`POST /generate-cards`** *(open)*
+**`POST /generate-cards`** *(requires auth — ownership verified)*
 - Body: `{"document_id": "uuid"}`
+- 403 if document doesn't belong to the authenticated user.
 - Checks `documents.flashcards` cache.
 - Returns `{"flashcards": [{question, answer}, ...]}`
 
-**`POST /ask`** *(optional auth, rate-limited)*
+**`POST /ask`** *(requires auth — ownership verified; 60 req/min IP limit)*
 - Body: `{"document_id": "uuid", "question": "..."}`
-- Enforces 20 questions/hour rolling limit per `user_id` (anonymous or real), fallback to `document_id`; 429 with `{"error": "rate_limited", "retry_after": N}` on breach.
+- 403 if document doesn't belong to the authenticated user.
+- Enforces 20 questions/hour rolling limit per `user_id`; 429 with `{"error": "rate_limited", "retry_after": N}` on breach.
 - Embeds question → `match_documents` RPC → Gemini with grounded prompt.
 - 404 if no relevant chunks found.
 - Returns `{"answer": str, "citations": [{page_number, snippet}, ...]}`
@@ -100,15 +108,15 @@ Entry point. Defines all endpoints, auth dependencies, and the in-memory rate li
 - Fetches all S3 filenames for the user's documents, deletes each S3 object, then calls `supabase.auth.admin.delete_user(user_id)` which cascades to `profiles` and `documents` tables.
 - Returns `{"ok": True}`.
 
-**`GET /documents/{document_id}/cache-status`** — returns `{has_summary, has_flashcards}`
+**`GET /documents/{document_id}/cache-status`** *(requires auth — ownership verified)* — returns `{has_summary, has_flashcards}`
 
-**`DELETE /documents/{document_id}/cache/summary`** — nulls `summary` + `quiz` columns
+**`DELETE /documents/{document_id}/cache/summary`** *(requires auth — ownership verified)* — nulls `summary` + `quiz` columns
 
-**`DELETE /documents/{document_id}/cache/flashcards`** — nulls `flashcards` column
+**`DELETE /documents/{document_id}/cache/flashcards`** *(requires auth — ownership verified)* — nulls `flashcards` column
 
-**`GET /documents/{document_id}/pdf`** — PDF proxy (downloads from S3 server-side, avoids CORS)
+**`GET /documents/{document_id}/pdf`** *(requires auth — ownership verified)* — PDF proxy (downloads from S3 server-side, avoids CORS)
 
-**`GET /documents/{document_id}/pdf-url`** — returns a 1-hour presigned S3 URL
+**`GET /documents/{document_id}/pdf-url`** *(requires auth — ownership verified)* — returns a 1-hour presigned S3 URL
 
 **`GET /dictionary/{word}`** — Free Dictionary API proxy; returns `{word, phonetic, definition, example, synonyms}`
 
@@ -132,6 +140,7 @@ Supabase (PostgreSQL + pgvector) interactions. Uses `SUPABASE_SERVICE_ROLE_KEY` 
 | `clear_flashcards_cache(document_id)` | Nulls `flashcards`. Returns `True`/`False`. |
 | `search_chunks(document_id, query_embedding, match_count, match_threshold)` | Calls `match_documents` RPC. Defaults: top 10 chunks, 0.3 threshold. |
 | `save_document_chunks(document_id, chunks)` | Batch-inserts into `document_chunks`. Each chunk needs `content`, `metadata`, `embedding`. |
+| `verify_document_owner(document_id, user_id)` | Returns `True` if the document exists and belongs to `user_id`. Used by all document-scoped endpoints to enforce ownership. |
 
 **Supabase tables:**
 

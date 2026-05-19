@@ -12,6 +12,7 @@ pymupdf
 openai
 langchain-text-splitters
 google-genai
+slowapi
 
 # dev / testing
 pytest

@@ -1,4 +1,4 @@
-from fastapi import FastAPI, UploadFile, File, HTTPException, Depends
+from fastapi import FastAPI, Request, UploadFile, File, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
@@ -11,11 +11,15 @@ from db_utils import (
     search_chunks, get_user_documents, get_document_filename, get_document_cache,
     save_document_cache, clear_summary_cache, clear_flashcards_cache,
     get_profile, increment_documents_used, get_user_document_filenames,
+    verify_document_owner,
 )
 from dotenv import load_dotenv
 from pdf_utils import extract_text_from_pdf, extract_chunks_from_pdf
 from embedding_utils import embed_texts
 from gemini_utils import generate_summary_and_quiz, generate_flashcards, generate_answer
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 import uuid
 import httpx
 import asyncio
@@ -25,12 +29,26 @@ from collections import defaultdict
 load_dotenv()
 app = FastAPI()
 
+limiter = Limiter(key_func=get_remote_address)
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)  # type: ignore
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:3000"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+@app.middleware("http")
+async def add_security_headers(request, call_next):
+    response = await call_next(request)
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Content-Security-Policy"] = "default-src 'none'"
+    return response
 
 # ---------------------------------------------------------------------------
 # Auth
@@ -74,6 +92,7 @@ def require_auth(auth: AuthUser | None = Depends(get_current_user)) -> AuthUser:
 _question_timestamps: dict[str, list[float]] = defaultdict(list)
 QUESTION_LIMIT = 20
 QUESTION_WINDOW = 3600
+MAX_FILE_SIZE = 20 * 1024 * 1024  # 20 MB
 
 def check_question_rate_limit(key: str) -> tuple[bool, int]:
     """Returns (allowed, seconds_until_reset). Caller provides user_id or guest_token."""
@@ -125,7 +144,9 @@ def list_documents(auth: AuthUser = Depends(require_auth)):
     }
 
 @app.post("/upload")
+@limiter.limit("20/minute")
 async def upload_pdf(
+    request: Request,
     file: UploadFile = File(...),
     auth: AuthUser | None = Depends(get_current_user),
 ):
@@ -148,6 +169,12 @@ async def upload_pdf(
             raise HTTPException(status_code=403, detail="quota_exceeded")
 
     file_bytes = await file.read()
+
+    if len(file_bytes) > MAX_FILE_SIZE:
+        raise HTTPException(status_code=400, detail="File too large. Maximum size is 20MB.")
+
+    if file_bytes[:5] != b"%PDF-":
+        raise HTTPException(status_code=400, detail="Invalid PDF file.")
 
     extracted_text = extract_text_from_pdf(file_bytes)
     if not extracted_text:
@@ -188,7 +215,9 @@ async def upload_pdf(
     }
 
 @app.post("/process-document")
-def process_document(req: DocumentRequest):
+def process_document(req: DocumentRequest, auth: AuthUser = Depends(require_auth)):
+    if not verify_document_owner(req.document_id, auth.user_id):
+        raise HTTPException(status_code=403, detail="forbidden")
     cache = get_document_cache(req.document_id)
     if cache and cache.get("summary") and cache.get("quiz"):
         return {"summary": cache["summary"], "quiz": cache["quiz"]}
@@ -205,7 +234,9 @@ def process_document(req: DocumentRequest):
     return result
 
 @app.get("/documents/{document_id}/cache-status")
-def get_cache_status(document_id: str):
+def get_cache_status(document_id: str, auth: AuthUser = Depends(require_auth)):
+    if not verify_document_owner(document_id, auth.user_id):
+        raise HTTPException(status_code=403, detail="forbidden")
     cache = get_document_cache(document_id)
     return {
         "has_summary": bool(cache and cache.get("summary")),
@@ -213,14 +244,18 @@ def get_cache_status(document_id: str):
     }
 
 @app.delete("/documents/{document_id}/cache/summary")
-def delete_summary_cache(document_id: str):
+def delete_summary_cache(document_id: str, auth: AuthUser = Depends(require_auth)):
+    if not verify_document_owner(document_id, auth.user_id):
+        raise HTTPException(status_code=403, detail="forbidden")
     ok = clear_summary_cache(document_id)
     if not ok:
         raise HTTPException(status_code=500, detail="Failed to clear summary cache")
     return {"ok": True}
 
 @app.post("/generate-cards")
-def generate_cards(req: DocumentRequest):
+def generate_cards(req: DocumentRequest, auth: AuthUser = Depends(require_auth)):
+    if not verify_document_owner(req.document_id, auth.user_id):
+        raise HTTPException(status_code=403, detail="forbidden")
     cache = get_document_cache(req.document_id)
     if cache and cache.get("flashcards"):
         return {"flashcards": cache["flashcards"]}
@@ -237,11 +272,15 @@ def generate_cards(req: DocumentRequest):
     return result
 
 @app.post("/ask")
+@limiter.limit("60/minute")
 def ask(
+    request: Request,
     req: AskRequest,
-    auth: AuthUser | None = Depends(get_current_user),
+    auth: AuthUser = Depends(require_auth),
 ):
-    rate_limit_key = auth.user_id if auth else req.document_id
+    if not verify_document_owner(req.document_id, auth.user_id):
+        raise HTTPException(status_code=403, detail="forbidden")
+    rate_limit_key = auth.user_id
     allowed, retry_after = check_question_rate_limit(rate_limit_key)
     if not allowed:
         raise HTTPException(
@@ -262,14 +301,18 @@ def ask(
     return result
 
 @app.delete("/documents/{document_id}/cache/flashcards")
-def delete_flashcards_cache(document_id: str):
+def delete_flashcards_cache(document_id: str, auth: AuthUser = Depends(require_auth)):
+    if not verify_document_owner(document_id, auth.user_id):
+        raise HTTPException(status_code=403, detail="forbidden")
     ok = clear_flashcards_cache(document_id)
     if not ok:
         raise HTTPException(status_code=500, detail="Failed to clear flashcards cache")
     return {"ok": True}
 
 @app.get("/documents/{document_id}/pdf-url")
-def get_pdf_url(document_id: str):
+def get_pdf_url(document_id: str, auth: AuthUser = Depends(require_auth)):
+    if not verify_document_owner(document_id, auth.user_id):
+        raise HTTPException(status_code=403, detail="forbidden")
     filename = get_document_filename(document_id)
     if not filename:
         raise HTTPException(status_code=404, detail="Document not found")
@@ -279,7 +322,9 @@ def get_pdf_url(document_id: str):
     return {"url": url}
 
 @app.get("/documents/{document_id}/pdf")
-def get_pdf_proxy(document_id: str):
+def get_pdf_proxy(document_id: str, auth: AuthUser = Depends(require_auth)):
+    if not verify_document_owner(document_id, auth.user_id):
+        raise HTTPException(status_code=403, detail="forbidden")
     filename = get_document_filename(document_id)
     if not filename:
         raise HTTPException(status_code=404, detail="Document not found")
