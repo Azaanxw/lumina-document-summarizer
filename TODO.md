@@ -178,34 +178,34 @@ Zero friction entry. The user gets full value from their first document before e
 
 ## Phase 7: Production & Polish 🛡️
 
+### Security & Auth (code changes — before deployment)
+- [ ] Enforce document ownership on all read/query endpoints — `/pdf`, `/pdf-url`, `/process-document`, `/generate-cards`, `/ask`, and cache endpoints currently accept any `document_id` with no ownership check; add `verify_document_owner(document_id, user_id)` in `db_utils.py` and return 403 if the authenticated user doesn't own the document
+- [ ] Harden file upload validation — current `content_type` check is header-only and spoofable; validate magic bytes (PDF starts with `%PDF-`) and enforce a max file size limit
+- [ ] Add HTTP security headers middleware — HSTS, `X-Frame-Options`, `X-Content-Type-Options`, CSP
+- [ ] Add global request rate limiting middleware (slowapi) to prevent brute-force
+- [ ] Prompt engineering to prevent misuse
+- [ ] Configure strict CORS policy — whitelist Vercel frontend domain only *(needs production domain — do after Vercel deploy)*
+- [ ] Rotate all API keys and move secrets to AWS Secrets Manager *(needs AWS infra — do after ECS deploy)*
+
+### Reliability (code changes — before deployment)
+- [ ] Add structured application logging (replace print statements with Python logging)
+- [ ] Add request timeout handling for Gemini and OpenAI calls
+- [ ] Replace in-memory rate limiter with Redis or DB-backed store — current implementation breaks under multiple ECS instances since each container has isolated memory
+- [ ] Integrate error tracking (Sentry) for both frontend and backend
+- [ ] Add Supabase Edge Function or cron webhook to delete S3 objects for expired anonymous documents *(can follow post-deploy)*
+
 ### Infrastructure & Deployment
+- [ ] Add `GET /health` endpoint — required by ECS/ALB for container health checks
 - [ ] Containerize backend using Docker
 - [ ] Deploy backend to AWS ECS (Fargate) via Terraform
 - [ ] Deploy frontend to Vercel (auto-deploy from GitHub main branch)
 - [ ] Configure environment variables in ECS task definition and Vercel project settings
-- [ ] Add `GET /health` endpoint — required by ECS/ALB for container health checks
 
 ### CI/CD
 - [ ] Setup GitHub Actions pipeline — lint, run pytest + coverage, run Jest, build Docker image on PR
 - [ ] Run Playwright E2E tests against preview/staging environment on PR
 - [ ] Auto-deploy to ECS on merge to main via GitHub Actions
 - [ ] Block merge if coverage drops below threshold
-
-### Security & Auth
-- [ ] Prompt engineering to prevent misuse
-- [ ] Configure strict CORS policy — whitelist Vercel frontend domain only
-- [ ] Rotate all API keys and move secrets to AWS Secrets Manager
-- [ ] Add global request rate limiting middleware (slowapi) to prevent brute-force
-- [ ] Enforce document ownership on all read/query endpoints — `/pdf`, `/pdf-url`, `/process-document`, `/generate-cards`, `/ask`, and cache endpoints currently accept any `document_id` with no ownership check; add `verify_document_owner(document_id, user_id)` in `db_utils.py` and return 403 if the authenticated user doesn't own the document
-- [ ] Harden file upload validation — current `content_type` check is header-only and spoofable; validate magic bytes (PDF starts with `%PDF-`) and enforce a max file size limit
-- [ ] Add HTTP security headers middleware — HSTS, `X-Frame-Options`, `X-Content-Type-Options`, CSP
-
-### Reliability
-- [ ] Add structured application logging (replace print statements with Python logging)
-- [ ] Integrate error tracking (Sentry) for both frontend and backend
-- [ ] Add request timeout handling for Gemini and OpenAI calls
-- [ ] Add Supabase Edge Function or cron webhook to delete S3 objects for expired anonymous documents
-- [ ] Replace in-memory rate limiter with Redis or DB-backed store — current implementation breaks under multiple ECS instances since each container has isolated memory
 
 ### Performance
 - [ ] Tune RAG retrieval — test match_threshold and match_count against real queries
