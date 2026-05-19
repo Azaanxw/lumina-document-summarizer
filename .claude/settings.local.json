@@ -1,0 +1,25 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(Get-ChildItem -Recurse -Directory)",
+      "Bash(Select-Object -First 30 FullName)",
+      "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\blizz\\\\Desktop\\\\Projects\\\\Document summarizer\" -Recurse -Directory)",
+      "Bash(Select-Object -ExpandProperty FullName)",
+      "Bash(Sort-Object)",
+      "Bash(grep -E \"\\\\.\\(txt|toml|ini|cfg|env\\)$\")",
+      "Bash(Select-Object -First 20)",
+      "Bash(python3 -c \"import sys,json; p=json.load\\(sys.stdin\\); print\\('version:', p.get\\('version'\\)\\); print\\('jest keys:', [k for k in p.get\\('exports', {}\\).keys\\(\\) if 'jest' in k.lower\\(\\)]\\)\")",
+      "Bash(node -e \"const p = require\\('./frontend/node_modules/next/package.json'\\); console.log\\('version:', p.version\\); const jestKeys = Object.keys\\(p.exports || {}\\).filter\\(k => k.toLowerCase\\(\\).includes\\('jest'\\)\\); console.log\\('jest keys:', jestKeys\\)\")",
+      "Bash(node *)",
+      "Bash(npm install *)",
+      "Bash(npx playwright *)",
+      "Bash(.\\\\.venv\\\\Scripts\\\\pip.exe install *)",
+      "Bash(npx jest *)",
+      "Bash(dir /s /b \"C:\\\\Users\\\\blizz\\\\Desktop\\\\Projects\\\\Document summarizer\\\\frontend\\\\components\\\\nudge-banner*\")",
+      "Bash(findstr \"version\" \"C:\\\\Users\\\\blizz\\\\Desktop\\\\Projects\\\\Document summarizer\\\\frontend\\\\node_modules\\\\@testing-library\\\\user-event\\\\package.json\")",
+      "Bash(.venv\\\\Scripts\\\\python.exe -m pytest --tb=short)",
+      "PowerShell(New-Item *)",
+      "PowerShell(try { $r = Invoke-WebRequest -Uri \"http://localhost:8000/docs\" -TimeoutSec 3; \"Backend up: $\\($r.StatusCode\\)\" } catch { \"Backend not running: $_\" })"
+    ]
+  }
+}

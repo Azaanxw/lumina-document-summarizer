@@ -5,9 +5,14 @@ langchain-openai
 langchain-pinecone
 python-dotenv
 python-multipart
+httpx
 boto3
 supabase
 pymupdf
 openai
 langchain-text-splitters
 google-genai
+
+# dev / testing
+pytest
+pytest-asyncio

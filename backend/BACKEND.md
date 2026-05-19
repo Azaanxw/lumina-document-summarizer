@@ -15,9 +15,24 @@ backend/
 ├── db_utils.py         # Supabase client — all DB queries including auth/profile/claim
 ├── s3_utils.py         # AWS S3 upload and presigned URL helpers
 ├── requirements.txt    # Python dependencies
+├── pytest.ini          # pytest config (testpaths = tests, asyncio_mode = auto)
 ├── .env                # Environment variables (not committed)
 ├── uploads/            # Local temp directory (unused)
-└── venv/               # Python virtual environment
+├── venv/               # Python virtual environment
+└── tests/
+    ├── __init__.py
+    ├── conftest.py         # Shared fixtures: client, authed_client, anon_client, mock_s3, mock_supabase, etc.
+    ├── test_auth.py        # get_current_user + require_auth dependency logic
+    ├── test_documents.py   # GET /documents, DELETE /account
+    ├── test_upload.py      # POST /upload — quota, S3 failure, anon/real user paths
+    ├── test_process.py     # /process-document, /generate-cards, cache-status, cache-delete
+    ├── test_ask.py         # POST /ask — 200/404/500, rate limit key selection, Gemini fallback
+    ├── test_rate_limit.py  # check_question_rate_limit: 20-request window, rolling expiry, retry_after
+    ├── test_pdf_utils.py   # extract_text_from_pdf + extract_chunks_from_pdf (uses fitz fixture)
+    ├── test_s3_utils.py    # upload/download/presign/delete S3 helpers (async)
+    ├── test_db_utils.py    # All db_utils functions — Supabase chain mocking
+    ├── test_gemini_utils.py    # Gemini success, OpenAI fallback, both-fail paths
+    └── test_embedding_utils.py # embed_texts batch embedding
 ```
 
 ---
@@ -229,3 +244,21 @@ uvicorn main:app --reload
 ```
 
 API docs: `http://localhost:8000/docs`
+
+---
+
+## Testing
+
+```powershell
+# From backend/ with venv activated
+pytest                                    # run all tests
+pytest --cov=. --cov-report=term-missing  # with coverage
+pytest tests/test_upload.py -v            # single file
+```
+
+**Key patterns:**
+- External clients (`OpenAI`, `genai.Client`, `boto3.client`, `create_client`) are created inside functions — patch at the call site module (e.g. `patch("main.upload_to_s3")`, not `patch("s3_utils.upload_to_s3")`).
+- `upload_to_s3` is `async def` — use `AsyncMock` when patching it in endpoint tests.
+- Auth is bypassed via `app.dependency_overrides` (see `authed_client` / `anon_client` fixtures in `conftest.py`).
+- Rate limit state (`main._question_timestamps`) is cleared by an `autouse` fixture in `conftest.py`.
+- `asyncio_mode = auto` in `pytest.ini` — `async def` tests run without any decorator.
