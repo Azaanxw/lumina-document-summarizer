@@ -9,9 +9,15 @@ import { FlashcardDeck } from "@/components/flashcard-deck"
 import { QAChat } from "@/components/qa-chat"
 import { PdfViewer } from "@/components/pdf-viewer"
 import { DictionaryPopup } from "@/components/dictionary-popup"
-import { getCacheStatus, generateCards, type Flashcard } from "@/lib/api"
+import { NudgeBanner } from "@/components/nudge-banner"
+import { getCacheStatus, generateCards, deleteAccount, type Flashcard } from "@/lib/api"
+import { supabase } from "@/lib/supabase"
 import { Button } from "@/components/ui/button"
-import { ChevronLeft, GripHorizontal, Layers, Loader2 } from "lucide-react"
+import { UserMenu } from "@/components/user-menu"
+import Image from "next/image"
+import { ChevronLeft, GripHorizontal, Layers, Loader2, User } from "lucide-react"
+import { AuthModal } from "@/components/auth-modal"
+import { toast } from "sonner"
 
 export default function DocumentPage() {
   const router = useRouter()
@@ -22,6 +28,42 @@ export default function DocumentPage() {
   const [generatingFlashcards, setGeneratingFlashcards] = useState(false)
   const [preloadedCards, setPreloadedCards] = useState<Flashcard[] | null>(null)
   const [askHeight, setAskHeight] = useState(280)
+  const [summaryLoaded, setSummaryLoaded] = useState(false)
+  const [userEmail, setUserEmail] = useState<string | null>(null)
+  const [isAnonymous, setIsAnonymous] = useState(false)
+  const [showGuestModal, setShowGuestModal] = useState(false)
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => {
+      const user = data.session?.user
+      if (user && !user.is_anonymous) {
+        setUserEmail(user.email ?? null)
+        setIsAnonymous(false)
+      } else if (user?.is_anonymous) {
+        setIsAnonymous(true)
+      }
+    })
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_, session) => {
+      const user = session?.user
+      if (user && !user.is_anonymous) {
+        setUserEmail(user.email ?? null)
+        setIsAnonymous(false)
+        setShowGuestModal(false)
+      } else {
+        setUserEmail(null)
+        setIsAnonymous(user?.is_anonymous ?? false)
+      }
+    })
+
+    return () => subscription.unsubscribe()
+  }, [id])
+
+  async function handleDeleteAccount() {
+    await deleteAccount()
+    await supabase.auth.signOut()
+    router.replace("/?msg=account_deleted")
+  }
 
   useEffect(() => {
     getCacheStatus(id).then((s) => {
@@ -42,7 +84,6 @@ export default function DocumentPage() {
     document.body.style.userSelect = "none"
 
     function onMove(e: MouseEvent) {
-      // dragging up (negative delta) increases height
       const newHeight = Math.min(Math.max(startHeight + (startY - e.clientY), 120), 640)
       setAskHeight(newHeight)
     }
@@ -65,6 +106,7 @@ export default function DocumentPage() {
       setPreloadedCards(result.flashcards)
       setFlashcardsUnlocked(true)
       setTab("flashcards")
+      toast.success("Flashcards generated!")
     } catch {
       // generation failed — silently reset so user can retry
     } finally {
@@ -80,6 +122,40 @@ export default function DocumentPage() {
           <ChevronLeft className="size-4" />
           Dashboard
         </Button>
+
+        <div className="flex-1 flex items-center justify-center gap-2">
+          <Image src="/icon.png" alt="Lumina" width={36} height={36} className="rounded-lg shrink-0" />
+          <span className="font-bold text-base">Lumina</span>
+          <span className="text-muted-foreground/40 select-none">|</span>
+          <span className="text-sm text-muted-foreground">PDF summarizer</span>
+        </div>
+
+        <div className="shrink-0">
+          {userEmail ? (
+            <UserMenu
+              userEmail={userEmail}
+              onSignOut={async () => { await supabase.auth.signOut(); router.replace("/?msg=signed_out") }}
+              onDeleteAccount={handleDeleteAccount}
+            />
+          ) : isAnonymous ? (
+            <button
+              onClick={() => setShowGuestModal(true)}
+              className="size-8 rounded-full bg-muted border flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted/80 transition-colors"
+              aria-label="Sign in"
+            >
+              <User className="size-4" />
+            </button>
+          ) : null}
+        </div>
+
+        {showGuestModal && (
+          <AuthModal
+            mode="upgrade"
+            subtitle="Create an account to unlock 3 more documents and keep this one."
+            onSuccess={() => router.push("/dashboard?msg=signed_in")}
+            onDismiss={() => setShowGuestModal(false)}
+          />
+        )}
       </header>
 
       {/* Split layout */}
@@ -95,6 +171,8 @@ export default function DocumentPage() {
 
           {/* Study tools (scrollable) */}
           <div className="flex-1 overflow-y-auto px-5 py-4 min-h-0">
+            <NudgeBanner analysisComplete={summaryLoaded} />
+
             <Tabs value={tab} onValueChange={setTab}>
               <div className="flex items-center justify-between gap-2">
                 <TabsList>
@@ -115,7 +193,7 @@ export default function DocumentPage() {
               </div>
 
               <TabsContent value="summary" keepMounted>
-                <SummaryView documentId={id} />
+                <SummaryView documentId={id} onLoaded={() => { setSummaryLoaded(true); toast.success("Summary & quiz are ready!") }} />
               </TabsContent>
 
               {flashcardsUnlocked && (
@@ -126,7 +204,7 @@ export default function DocumentPage() {
             </Tabs>
           </div>
 
-          {/* Drag handle — resize the Ask panel */}
+          {/* Drag handle */}
           <div
             onMouseDown={handleAskDragStart}
             className="shrink-0 border-t h-3 flex items-center justify-center cursor-ns-resize hover:bg-accent/60 group transition-colors"

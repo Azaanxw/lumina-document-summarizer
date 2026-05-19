@@ -2,7 +2,7 @@
 
 ## Overview
 
-Next.js 16 App Router frontend for Lumina. Lets users upload PDFs, then study them via AI-generated summaries, quizzes, flashcards, and RAG-powered Q&A. Includes a dictionary popup for any selected word. Talks to the FastAPI backend over HTTP — no auth headers needed (mock user ID is hardcoded server-side).
+Next.js 16 App Router frontend for Lumina. Lets users upload PDFs, then study them via AI-generated summaries, quizzes, flashcards, and RAG-powered Q&A. Includes a dictionary popup for any selected word. Phase 5 adds Supabase auth (Google OAuth + Magic Link OTP), guest upload flow with post-analysis nudge banner, document claiming, and per-user quota display.
 
 ## Directory Structure
 
@@ -13,18 +13,21 @@ frontend/
 │   ├── layout.tsx                   # Root layout — Geist font, metadata
 │   ├── page.tsx                     # Landing page — upload zone + wordmark
 │   ├── dashboard/
-│   │   └── page.tsx                 # Document grid with upload toggle
+│   │   └── page.tsx                 # Document grid, quota indicator, sign-out
 │   └── document/
 │       └── [id]/
-│           └── page.tsx             # Study tools — Summary/Quiz, Flashcards, Ask tabs
+│           └── page.tsx             # Study tools — Summary/Quiz, Flashcards, Ask tabs + NudgeBanner
 ├── components/
 │   ├── upload-zone.tsx              # Drag-and-drop PDF uploader
 │   ├── document-card.tsx            # Card for a document in the dashboard grid
-│   ├── summary-view.tsx             # Summary paragraphs + interactive quiz
+│   ├── summary-view.tsx             # Summary paragraphs + interactive quiz; fires onLoaded callback
 │   ├── flashcard-deck.tsx           # 3D flip flashcard carousel
 │   ├── qa-chat.tsx                  # Chat-style Q&A with citation badges
 │   ├── citation-badge.tsx           # "Page N" chip shown below Q&A answers
 │   ├── dictionary-popup.tsx         # Word-selection popup using Free Dictionary API
+│   ├── auth-modal.tsx               # Google OAuth + Magic Link OTP modal (2-step: combined options → OTP verify)
+│   ├── nudge-banner.tsx             # Post-analysis sign-in prompt (15s delay, no dismiss); handles claim on auth
+│   ├── user-menu.tsx                # Profile icon + dropdown (Sign out / Delete account with confirmation)
 │   └── ui/                          # shadcn/ui components (base-nova style)
 │       ├── button.tsx
 │       ├── card.tsx
@@ -35,9 +38,12 @@ frontend/
 │       ├── badge.tsx
 │       └── separator.tsx
 ├── lib/
-│   ├── api.ts                       # Typed fetch layer for all backend endpoints
+│   ├── api.ts                       # Typed fetch layer — auto auth headers, guest token, claim
+│   ├── supabase.ts                  # Supabase browser client (createBrowserClient)
+│   ├── errors.ts                    # Friendly error message mapping
 │   └── utils.ts                     # cn() helper (clsx + tailwind-merge)
-├── .env.local                       # NEXT_PUBLIC_API_URL (not committed)
+├── middleware.ts                    # Protects /dashboard — redirects unauthenticated users to /
+├── .env.local                       # NEXT_PUBLIC_API_URL, NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY
 ├── components.json                  # shadcn config — style: base-nova, @base-ui/react
 ├── next.config.ts
 ├── tailwind.config (inline via CSS) # Tailwind 4 — configured in globals.css
@@ -56,13 +62,45 @@ frontend/
 | Components | shadcn/ui `base-nova` style — uses `@base-ui/react` primitives, **not** Radix UI |
 | Icons | lucide-react |
 | Font | Geist (loaded via `next/font/google` in layout.tsx) |
+| Auth | `@supabase/supabase-js` + `@supabase/ssr` — Google OAuth + Magic Link OTP |
+
+---
+
+## Auth Model
+
+- **Guests**: upload freely, no account needed. `guest_token` (UUID) returned by `/upload` is stored in `localStorage` keyed as `lumina_guest_{documentId}` and held in the `api.ts` module as `_guestToken` for the current session. All requests include `X-Guest-Token` header when a guest token is active.
+- **Authenticated users**: session managed by Supabase (`createBrowserClient`). All requests include `Authorization: Bearer <token>` header automatically via `getAuthHeaders()` in `api.ts`.
+- **Claiming**: after sign-in, `NudgeBanner` calls `claimDocument(documentId, guestToken)` → `POST /documents/{id}/claim`. On success the guest_token is removed from localStorage.
+- **Dashboard protection**: `middleware.ts` uses `createServerClient` to validate the session cookie and redirects unauthenticated users to `/`.
 
 ---
 
 ## Files
 
+### `lib/supabase.ts`
+Exports a singleton `supabase` browser client created via `createBrowserClient`. Imported by `api.ts`, `auth-modal.tsx`, `nudge-banner.tsx`, `dashboard/page.tsx`, and `document/[id]/page.tsx`.
+
+```ts
+import { createBrowserClient } from '@supabase/ssr'
+export const supabase = createBrowserClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+)
+```
+
+---
+
 ### `lib/api.ts`
-All fetch calls go here. Reads `NEXT_PUBLIC_API_URL` as the base URL. Every function throws on non-2xx so components can catch and display errors.
+All fetch calls. Reads `NEXT_PUBLIC_API_URL` as the base URL. Every function throws on non-2xx.
+
+**Guest token management:**
+
+| Export | Description |
+|---|---|
+| `setGuestToken(token)` | Sets the module-level `_guestToken` variable (called on upload and on page load from localStorage) |
+| `getStoredGuestToken(documentId)` | Reads `lumina_guest_{documentId}` from localStorage |
+
+`getAuthHeaders()` (internal) — async; reads Supabase session for `Authorization` header and `_guestToken` for `X-Guest-Token`. Merged into every `request()` call automatically.
 
 **Types exported:**
 
@@ -72,174 +110,188 @@ All fetch calls go here. Reads `NEXT_PUBLIC_API_URL` as the base URL. Every func
 | `QuizQuestion` | `{ question: string; options: string[]; answer: string }` |
 | `Flashcard` | `{ question: string; answer: string }` |
 | `Citation` | `{ page_number: number; snippet: string }` |
+| `Quota` | `{ used: number; total: number }` |
 
 **Functions exported:**
 
 | Function | Method | Endpoint | Returns |
 |---|---|---|---|
-| `uploadDocument(file)` | POST | `/upload` | `{ document_id, filename }` — extracts `id` from `database_record[0].id` |
-| `listDocuments()` | GET | `/documents` | `DocumentMeta[]` |
+| `uploadDocument(file)` | POST | `/upload` | `{ document_id, filename, guest_token }` — stores guest_token in localStorage automatically |
+| `claimDocument(documentId, guestToken)` | POST | `/documents/{id}/claim` | `void` — removes guest_token from localStorage on success |
+| `deleteAccount()` | DELETE | `/account` | `void` — call then `supabase.auth.signOut()` + redirect |
+| `listDocuments()` | GET | `/documents` | `{ documents: DocumentMeta[], quota: Quota }` |
 | `processDocument(documentId)` | POST | `/process-document` | `{ summary: string, quiz: QuizQuestion[] }` |
 | `generateCards(documentId)` | POST | `/generate-cards` | `{ flashcards: Flashcard[] }` |
 | `askQuestion(documentId, question)` | POST | `/ask` | `{ answer: string, citations: Citation[] }` |
 | `lookupWord(word)` | GET | `/dictionary/{word}` | `{ word, phonetic, definition, example, synonyms }` |
+| `getCacheStatus(documentId)` | GET | `/documents/{id}/cache-status` | `{ has_summary, has_flashcards }` |
+
+---
+
+### `middleware.ts` *(root of frontend/)*
+Protects `/dashboard`. Uses `createServerClient` from `@supabase/ssr` to read the session from request cookies. Redirects unauthenticated users to `/`. Also refreshes and syncs auth cookies on every matched request.
+
+```ts
+export const config = { matcher: ['/dashboard/:path*'] }
+```
 
 ---
 
 ### `app/layout.tsx`
-Root layout. Loads Geist and Geist Mono via `next/font/google`, injects CSS variables into `<html>`. Metadata: `title: "Lumina"`, `description: "AI-powered PDF study tools"`.
+Root layout. Loads Geist and Geist Mono via `next/font/google`. Metadata: `title: "Lumina"`.
 
 ---
 
 ### `app/page.tsx` — Landing Page
-**Client component.** Full-viewport centered layout with:
-- Large "Lumina" wordmark
-- "Upload a PDF. Study smarter." tagline
+**Client component.** Full-viewport centered layout:
+- "Lumina" wordmark + tagline
 - `<UploadZone>` — on success, calls `router.push('/document/${id}')`
 - Link to `/dashboard` for returning users
 
 ---
 
 ### `app/dashboard/page.tsx` — Dashboard
-**Client component.** Fetches `listDocuments()` on mount.
+**Client component.** Requires authentication (enforced by `middleware.ts`).
 
-| State | Behaviour |
-|---|---|
-| Loading | 6-cell skeleton grid |
-| Empty | FileText icon + "Upload your first PDF" CTA |
-| Populated | Responsive grid of `DocumentCard` components |
-
-Upload button in the header toggles an inline `<UploadZone>`. On upload success, redirects to the new document page.
+- On mount: fetches `listDocuments()` for documents + quota; fetches session from Supabase for user email.
+- 401 response from `/documents` triggers `router.replace('/')` as a client-side fallback.
+- Header row: document count ("N of 4 free documents used") + user email + **Sign out** button (`supabase.auth.signOut()`).
+- If `quota.used >= quota.total`: shows a graceful "You've reached your free document limit. Thank you for using Lumina." card instead of the upload zone.
+- Document grid: `DocumentCard` components.
 
 ---
 
 ### `app/document/[id]/page.tsx` — Document Detail
 **Client component.** Gets document ID via `useParams<{ id: string }>()`.
 
-Three shadcn `Tabs`:
-
-| Tab value | Component rendered |
-|---|---|
-| `summary` | `<SummaryView>` |
-| `flashcards` | `<FlashcardDeck>` |
-| `ask` | `<QAChat>` |
-
-All three `TabsContent` use `keepMounted` — components stay in the DOM when switching tabs so API calls are made once and state is preserved. `<DictionaryPopup>` is mounted at the page level so it works across all tabs.
+- On mount: reads `lumina_guest_{id}` from localStorage and calls `setGuestToken()` to restore the module-level variable after a page refresh.
+- Tracks `summaryLoaded` state — set to `true` via `onLoaded` callback from `<SummaryView>`.
+- Renders `<NudgeBanner documentId={id} analysisComplete={summaryLoaded} />` above the Tabs, inside the scrollable study tools area.
+- Split layout: PDF viewer (left 40%) + study tools + ask panel (right 60%).
 
 ---
 
 ## Components
 
-### `components/upload-zone.tsx`
-**Client component.** Accepts a single prop: `onSuccess(documentId: string)`.
+### `components/auth-modal.tsx`
+**Client component.** Props: `onSuccess: () => void`, `onDismiss: () => void`, `subtitle?: string`.
 
-| State | Visual |
-|---|---|
-| `idle` | Dashed border, upload icon, instruction text |
-| `dragging` | Border highlights to primary colour |
-| `uploading` | Spinner + "Uploading and processing…" |
-| `success` | Green checkmark |
-| `error` | Red alert icon + error message + "Click to try again" |
+Fixed overlay modal with backdrop blur. Two internal steps:
 
-Handles drag-and-drop and click-to-browse. Validates PDF mime type client-side before calling `uploadDocument()`.
+| Step | UI | Auth call |
+|---|---|---|
+| `main` | Google button + "or" divider + email input + "Send code" button | Google: `signInWithOAuth({ provider: 'google' })`; Email: `signInWithOtp({ email })` → moves to `otp` |
+| `otp` | Numeric OTP input (6 digits, mono font) + "Verify" button + "Resend code" (returns to `main`) | `supabase.auth.verifyOtp({ email, token, type: 'email' })` |
+
+`subtitle` prop allows callers to customize the helper text (e.g. landing page uses "Sign in to access your documents.").
+Calls `onSuccess()` after a successful OTP verification. Google OAuth causes a page redirect — the `onAuthStateChange` listener in `NudgeBanner` handles the claim on return.
 
 ---
 
-### `components/document-card.tsx`
-**Client component.** Uses shadcn `Card`. Props: `doc: DocumentMeta`.
+### `components/nudge-banner.tsx`
+**Client component.** Props: `documentId: string`, `analysisComplete: boolean`.
 
-- Strips the UUID prefix from the stored S3 filename for display (`uuid_originalname.pdf` → `originalname.pdf`)
-- Formats `created_at` with `toLocaleDateString`
-- "Open" button navigates to `/document/[id]`
+Shown only when: `analysisComplete && !session && guestToken exists`. **No dismiss option** — banner stays until the user signs in.
+
+- Appears 15 seconds after `analysisComplete` becomes `true` (via `setTimeout`). If the user is already authenticated the timer never fires.
+- On mount: calls `supabase.auth.getSession()` and sets up `supabase.auth.onAuthStateChange`. On `SIGNED_IN` event, calls `claimDocument()`. Uses a `hasClaimed` ref to prevent double-claiming.
+- States:
+  - Hidden: timer has not elapsed yet
+  - Default: banner card with "Enjoying Lumina?" message + single "Login / Sign Up" button
+  - `claiming`: spinner + "Saving document to your account…"
+  - `claimed`: green checkmark + "Document saved to your account."
+- Renders `<AuthModal>` inline when the button is clicked.
+
+### `components/user-menu.tsx`
+**Client component.** Props: `userEmail: string`, `onSignOut: () => void`, `onDeleteAccount: () => void`.
+
+Profile circle avatar (first letter of email) shown in the document page header when authenticated. Click opens a dropdown:
+- User email (read-only label)
+- Sign out
+- Delete account → inline confirmation ("This will permanently delete all your documents.") with "Delete everything" / "Cancel" buttons.
+
+Closes on outside click via `document.addEventListener("mousedown", ...)` in a `useEffect`.
 
 ---
 
 ### `components/summary-view.tsx`
-**Client component.** Props: `documentId: string`.
+**Client component.** Props: `documentId: string`, `onLoaded?: () => void`.
 
-- Calls `processDocument(documentId)` once on mount (guarded with a `cancelled` ref to prevent React Strict Mode double-invocation)
-- Loading: 6-line skeleton
-- Summary rendered as `<p>` per `\n\n`-split paragraph
-- Quiz: each `QuizQuestion` in a shadcn `Card` with 4 option buttons
-  - Options are disabled after first click
-  - Correct option turns green; wrong selection turns red
-  - Correct answer shown as text if user picked wrong
+- Calls `processDocument(documentId)` on mount.
+- Fires `onLoaded?.()` when summary data resolves successfully — used by the document page to show the nudge banner only after analysis is complete.
+- Loading spinner, error state, structured summary rendering, interactive quiz carousel.
+
+---
+
+### `components/upload-zone.tsx`
+**Client component.** Props: `onSuccess(documentId: string)`.
+
+Handles drag-and-drop and click-to-browse. `uploadDocument()` now returns `{ document_id, filename, guest_token }` — guest_token is stored in localStorage automatically inside the API function.
+
+Before uploading, checks `supabase.auth.getSession()` and `hasExistingGuestDocument()`. If the user is a guest who already has a document in localStorage, enters `guest_limit` state instead of uploading — shows a sign-in prompt via `AuthModal`. After successful auth, resets to `idle` so the user can upload as an authenticated user.
+
+| State | Visual |
+|---|---|
+| `idle` | Dashed border, upload icon |
+| `dragging` | Border highlights to primary |
+| `uploading` | Spinner + "Uploading and processing…" |
+| `success` | Green checkmark |
+| `error` | Red icon + message + "Click to try again" |
+| `guest_limit` | LogIn icon + "You've used your free document" + "Sign in to continue" button |
+
+---
+
+### `components/document-card.tsx`
+Strips UUID prefix from S3 filename. Formats `created_at`. "Open" navigates to `/document/[id]`.
 
 ---
 
 ### `components/flashcard-deck.tsx`
-**Client component.** Props: `documentId: string`.
-
-- Calls `generateCards(documentId)` once on mount (cancelled-ref guard)
-- Loading: skeleton card + button skeletons
-- CSS 3D flip animation: `transform-style: preserve-3d`, `rotateY(180deg)` on click
-  - Front: question
-  - Back: answer
-- Prev / Next buttons + "N / 10" counter
-- Restart button resets to card 1 face-up
+CSS 3D flip animation. Prev/Next navigation. Accepts optional `initialCards` prop to skip re-fetching when cards were preloaded by the parent.
 
 ---
 
 ### `components/qa-chat.tsx`
-**Client component.** Props: `documentId: string`.
-
-- Message history kept in component state: `Array<{ question, answer, citations }>`
-- `ScrollArea` for the message list; auto-scrolls to latest answer
-- Each answer bubble shows `CitationBadge` chips below it
-- Loading: spinner bubble while waiting for response
-- Error shown inline below the input bar
+Chat UI with message history in component state. `ScrollArea` auto-scrolls to latest answer. Each answer shows `CitationBadge` chips. Shows inline rate limit error when backend returns 429.
 
 ---
 
 ### `components/citation-badge.tsx`
-Presentational (no `"use client"` needed). Props: `pageNumber`, `snippet`, optional `onClick`.
-
-- Renders a small chip: `<Bookmark icon> Page N`
-- `title={snippet}` for native hover tooltip
-- Conditionally applies pointer cursor and hover styles when `onClick` is provided
+Presentational. Renders `<Bookmark> Page N` chip with `title={snippet}` tooltip.
 
 ---
 
 ### `components/dictionary-popup.tsx`
-**Client component.** No props — attaches its own global event listeners.
-
-- `mouseup`: reads `window.getSelection()`, ignores if empty or contains whitespace (multi-word)
-- Positions popup at `getBoundingClientRect()` of the selection range + 8px below
-- Calls `lookupWord(word)`, shows popup on success, silently discards 404s
-- Dismiss: `mousedown` outside popup, or `Escape` key
-- Popup content: word + phonetic, definition, italic example quote, synonym `Badge` chips
+Attaches global `mouseup`/`mousedown`/`keydown` listeners. Single-word selection only. Positions popup below selection range. Supports nested synonym lookups.
 
 ---
 
 ## Design System
 
-All colours come from CSS custom properties defined in `globals.css`. Never hardcode hex/rgb values.
+All colours from CSS custom properties in `globals.css`. Never hardcode hex/rgb.
 
 | Token | Usage |
 |---|---|
 | `bg-background` / `text-foreground` | Page base |
-| `text-muted-foreground` | Secondary labels, placeholders |
+| `text-muted-foreground` | Secondary labels |
 | `border` | All borders |
-| `bg-muted` | Subtle surface (tabs list, input bg) |
+| `bg-muted` | Subtle surface |
 | `bg-card` | Card surfaces |
 | `primary` / `primary-foreground` | CTA buttons, active states |
 | `destructive` | Errors |
 
-Dark mode is automatic — add `class="dark"` to `<html>` to switch.
+Dark mode: add `class="dark"` to `<html>`.
 
 ---
 
 ## Running Locally
 
 ```powershell
-# Install dependencies (first time only)
 npm install
-
-# Start the dev server
 npm run dev
 ```
 
-App available at `http://localhost:3000`. Backend must also be running at `http://localhost:8000`.
+App at `http://localhost:3000`. Backend must be running at `http://localhost:8000`.
 
 ---
 
@@ -249,15 +301,16 @@ App available at `http://localhost:3000`. Backend must also be running at `http:
 
 ```
 NEXT_PUBLIC_API_URL=http://localhost:8000
+NEXT_PUBLIC_SUPABASE_URL=https://<project-ref>.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=<anon-key>
 ```
-
-`NEXT_PUBLIC_*` variables are inlined at build time and available in Client Components.
 
 ---
 
 ## Key Next.js 16 Patterns Used
 
-- **`useParams<{ id: string }>()`** from `next/navigation` — dynamic route params in Client Components (params is a Promise in Server Components only)
+- **`useParams<{ id: string }>()`** — dynamic route params in Client Components
 - **`"use client"`** — added only to components that use hooks, event handlers, or browser APIs
 - **Turbopack** — default in v16, no flags needed
-- **`keepMounted`** on `TabsContent` — base-ui prop that keeps panel in DOM after first activation
+- **`keepMounted`** on `TabsContent` — keeps panel in DOM after first activation
+- **`middleware.ts`** at project root — runs on Edge runtime, intercepts `/dashboard` requests before they reach the page

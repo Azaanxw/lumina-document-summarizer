@@ -9,18 +9,38 @@ def get_supabase_client() -> Client:
     return create_client(url, key)
 
 def save_document_metadata(user_id: str, filename: str, content: str):
-    """Saves document record to the documents table. Returns inserted rows or None."""
+    """Saves document record. user_id is always required (anonymous or real auth user)."""
     supabase = get_supabase_client()
     try:
         response = supabase.table("documents").insert({
             "user_id": user_id,
             "filename": filename,
-            "content": content
+            "content": content,
         }).execute()
         return response.data
     except Exception as e:
         print(f"Database Insert Error: {e}")
         return None
+
+def get_profile(user_id: str) -> dict | None:
+    """Returns the user's quota profile (documents_used, document_quota)."""
+    supabase = get_supabase_client()
+    try:
+        response = supabase.table("profiles").select("documents_used, document_quota").eq("id", user_id).single().execute()
+        return response.data  # type: ignore
+    except Exception as e:
+        print(f"Profile Fetch Error: {e}")
+        return None
+
+def increment_documents_used(user_id: str) -> bool:
+    """Increments the user's documents_used counter via a SECURITY DEFINER RPC."""
+    supabase = get_supabase_client()
+    try:
+        supabase.rpc("increment_documents_used", {"uid": user_id}).execute()
+        return True
+    except Exception as e:
+        print(f"Increment Error: {e}")
+        return False
 
 def get_document_content(document_id: str) -> str | None:
     """Fetches the full extracted text for a document by its ID."""
@@ -65,6 +85,16 @@ def get_user_documents(user_id: str) -> list[dict]:
         return response.data or []  # type: ignore
     except Exception as e:
         print(f"Document List Error: {e}")
+        return []
+
+def get_user_document_filenames(user_id: str) -> list[str]:
+    """Returns all S3 filenames for documents owned by the user (used before account deletion)."""
+    supabase = get_supabase_client()
+    try:
+        response = supabase.table("documents").select("filename").eq("user_id", user_id).execute()
+        return [str(row["filename"]) for row in (response.data or [])]  # type: ignore
+    except Exception as e:
+        print(f"Get Filenames Error: {e}")
         return []
 
 def get_document_cache(document_id: str) -> dict | None:

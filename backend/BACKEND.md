@@ -2,17 +2,17 @@
 
 ## Overview
 
-FastAPI backend for PDF ingestion, RAG-powered Q&A with page citations, AI study tools (summary, quiz, flashcards) via Gemini 3.1 Flash Lite, and a Free Dictionary API proxy.
+FastAPI backend for PDF ingestion, RAG-powered Q&A with page citations, AI study tools (summary, quiz, flashcards) via Gemini 3.1 Flash Lite, and a Free Dictionary API proxy. Uses Supabase Anonymous Auth — every visitor gets a real JWT before upload; anonymous users are limited to 1 document; upgrading (Google/email) converts the session in-place with no document transfer needed.
 
 ## Directory Structure
 
 ```
 backend/
-├── main.py             # FastAPI app — /upload, /process-document, /generate-cards, /ask, /dictionary/{word}
+├── main.py             # FastAPI app — all endpoints + auth dependencies + rate limiter
 ├── pdf_utils.py        # PDF text extraction + page-anchored chunking (PyMuPDF)
 ├── embedding_utils.py  # Batch text embedding via OpenAI text-embedding-3-small
 ├── gemini_utils.py     # Gemini 3.1 Flash Lite — summary, quiz, flashcard generation
-├── db_utils.py         # Supabase client — documents + document_chunks queries
+├── db_utils.py         # Supabase client — all DB queries including auth/profile/claim
 ├── s3_utils.py         # AWS S3 upload and presigned URL helpers
 ├── requirements.txt    # Python dependencies
 ├── .env                # Environment variables (not committed)
@@ -22,104 +22,101 @@ backend/
 
 ---
 
+## Auth Model
+
+- **Anonymous users**: Supabase `signInAnonymously()` is called on page load — every visitor has a real JWT with a `user_id` before they upload. Anonymous sessions are identified by `is_anonymous = true` on the auth user.
+- **Anonymous quota**: 1 document maximum. Backend returns 403 `quota_exceeded` on the second upload attempt.
+- **Upgrading**: `linkIdentity({ provider: 'google' })` or `updateUser({ email })` converts the anonymous session in-place — same `user_id`, documents are automatically preserved.
+- **Authenticated quota**: 4 documents (from `profiles.document_quota`). `documents_used` is incremented on upload (not incremented for anonymous uploads).
+- **JWT validation**: `get_current_user()` FastAPI dependency calls `supabase.auth.get_user(token)` and returns an `AuthUser(user_id, is_anonymous)` dataclass or `None`.
+- **Rate limiting**: `/ask` is limited to 20 questions/hour per `user_id` (anonymous or real), falling back to `document_id` if no auth.
+
+---
+
 ## Files
 
 ### `main.py`
-Entry point. Defines the FastAPI app and all endpoints.
+Entry point. Defines all endpoints, auth dependencies, and the in-memory rate limiter.
 
-**`GET /documents`** — list all documents for the mock user.
-- Returns `{"documents": [{"id", "filename", "created_at"}, ...]}`
-- Results ordered by `created_at` descending.
+**Auth dependencies:**
+- `AuthUser` — dataclass with `user_id: str` and `is_anonymous: bool`
+- `get_current_user(credentials)` — optional auth; returns `AuthUser | None`
+- `require_auth(auth)` — raises 401 if no valid session; returns `AuthUser`
 
-**`POST /upload`** — ingest a PDF into the system.
-1. Validate file is a PDF with a filename.
-2. Read entire file into memory once.
-3. `extract_text_from_pdf()` — full text string for `documents.content`.
-4. `extract_chunks_from_pdf()` — page-anchored chunks for RAG.
-5. `embed_texts()` — batch embed all chunk texts in one OpenAI API call.
-6. Attach each embedding to its chunk.
-7. Generate UUID-prefixed unique filename, seek(0), upload to S3.
-8. `save_document_metadata()` — insert into `documents`, extract returned `id`.
-9. `save_document_chunks()` — batch insert chunks + embeddings into `document_chunks`.
-10. Return JSON with filename, `chunks_stored` count, text preview, and DB record.
+**Rate limiter:**
+- `check_question_rate_limit(key)` — rolling 1-hour window, 20 questions max. Returns `(allowed: bool, retry_after: int)`.
 
-**`POST /process-document`** — generate summary + quiz for an existing document.
+---
+
+**`GET /documents`** *(requires auth)*
+- Returns `{"documents": [{id, filename, created_at}, ...], "quota": {"used": int, "total": int}}`
+- Ordered by `created_at` descending.
+
+**`POST /upload`** *(requires auth — anonymous or real)*
+1. 401 if no session at all.
+2. Quota check: anonymous → 1 doc max; real user → `profile.document_quota` (default 4).
+3. Extract full text + page-anchored chunks from PDF.
+4. Batch embed all chunks (OpenAI).
+5. Upload PDF to S3 with UUID-prefixed key.
+6. `save_document_metadata(user_id, ...)` — `user_id` always set (from anonymous or real session).
+7. If not anonymous: `increment_documents_used()`.
+8. `save_document_chunks()` — batch insert chunks + embeddings.
+9. Returns `{"message", "filename", "chunks_stored", "text_preview", "database_record"}`.
+
+**`POST /process-document`** *(open)*
 - Body: `{"document_id": "uuid"}`
-- Checks `documents.summary` + `documents.quiz` cache first — returns instantly if populated.
-- On cache miss: fetches `content`, calls Gemini, saves result to cache, returns result.
-- Returns `{"summary": str, "quiz": [{"question", "options", "answer"}, ...]}`
+- Checks `documents.summary` + `documents.quiz` cache — returns instantly if populated.
+- On cache miss: fetches `content`, calls Gemini, saves to cache.
+- Returns `{"summary": str, "quiz": [{question, options, answer}, ...]}`
 
-**`POST /generate-cards`** — generate 10 flashcards for an existing document.
+**`POST /generate-cards`** *(open)*
 - Body: `{"document_id": "uuid"}`
-- Checks `documents.flashcards` cache first — returns instantly if populated.
-- On cache miss: fetches `content`, calls Gemini, saves result to cache, returns result.
-- Returns `{"flashcards": [{"question": str, "answer": str}, ...]}`
+- Checks `documents.flashcards` cache.
+- Returns `{"flashcards": [{question, answer}, ...]}`
 
-**`POST /ask`** — RAG-powered Q&A with page citations.
+**`POST /ask`** *(optional auth, rate-limited)*
 - Body: `{"document_id": "uuid", "question": "..."}`
-- Embeds the question, calls `match_documents` RPC to retrieve top 5 relevant chunks (threshold 0.5).
+- Enforces 20 questions/hour rolling limit per `user_id` (anonymous or real), fallback to `document_id`; 429 with `{"error": "rate_limited", "retry_after": N}` on breach.
+- Embeds question → `match_documents` RPC → Gemini with grounded prompt.
 - 404 if no relevant chunks found.
-- Passes chunks + question to Gemini with a grounded-only prompt.
-- Returns `{"answer": str, "citations": [{"page_number": int, "snippet": str}]}`
+- Returns `{"answer": str, "citations": [{page_number, snippet}, ...]}`
 
-**`GET /documents/{document_id}/pdf`** — PDF proxy (avoids S3 CORS).
-- Downloads the PDF from S3 server-side and streams bytes back to the client.
-- Returns the raw PDF with `Content-Type: application/pdf`.
-- Frontend react-pdf points at this endpoint instead of the S3 presigned URL.
+**`DELETE /account`** *(requires auth)*
+- Fetches all S3 filenames for the user's documents, deletes each S3 object, then calls `supabase.auth.admin.delete_user(user_id)` which cascades to `profiles` and `documents` tables.
+- Returns `{"ok": True}`.
 
-**`GET /dictionary/{word}`** — Free Dictionary API proxy.
-- Calls `api.dictionaryapi.dev` server-side to avoid frontend CORS issues.
-- Returns `{"word": str, "phonetic": str, "definition": str, "example": str, "synonyms": list[str]}`
-- Synonyms capped at 5. Example and synonyms are empty string/list if not available.
-- 404 if word not found.
+**`GET /documents/{document_id}/cache-status`** — returns `{has_summary, has_flashcards}`
 
-> `MOCK_USER_ID` is hardcoded — replaced by JWT auth once the React frontend is ready.
+**`DELETE /documents/{document_id}/cache/summary`** — nulls `summary` + `quiz` columns
 
----
+**`DELETE /documents/{document_id}/cache/flashcards`** — nulls `flashcards` column
 
-### `pdf_utils.py`
-PDF processing using **PyMuPDF** (`fitz`) and **LangChain text splitters**.
+**`GET /documents/{document_id}/pdf`** — PDF proxy (downloads from S3 server-side, avoids CORS)
 
-| Function | Description |
-|---|---|
-| `extract_text_from_pdf(file_bytes)` | Opens PDF from raw bytes, concatenates all page text with double newlines. Returns full string or `""` on error. Used for `documents.content`. |
-| `extract_chunks_from_pdf(file_bytes)` | Page-anchored chunking: runs `RecursiveCharacterTextSplitter(chunk_size=800, chunk_overlap=100)` on each page independently so no chunk ever spans two pages. Returns `[{"content": str, "metadata": {"page_number": int}}, ...]`. Skips blank pages. |
+**`GET /documents/{document_id}/pdf-url`** — returns a 1-hour presigned S3 URL
 
----
-
-### `embedding_utils.py`
-OpenAI embedding wrapper.
-
-| Function | Description |
-|---|---|
-| `embed_texts(texts)` | Batch-sends a list of strings to `text-embedding-3-small` in one API call. Returns `list[list[float]]` — 1536-dim vectors matching the pgvector column. Picks up `OPENAI_API_KEY` from env automatically. |
-
----
-
-### `gemini_utils.py`
-Gemini 3.1 Flash Lite study tool generation. Both functions call `_get_client()` internally and enforce JSON output via `response_mime_type="application/json"`.
-
-| Function | Description |
-|---|---|
-| `generate_summary_and_quiz(text)` | Sends full document text with a mega-prompt to `gemini-3.1-flash-lite`. Returns `{"summary": str, "quiz": [...]}` — 10 multiple choice questions spread across the document. Returns `None` on error. |
-| `generate_flashcards(text)` | Sends full document text with a manual prompt to `gemini-3.1-flash-lite`. Returns `{"flashcards": [{"question": str, "answer": str}]}` — 10 Q&A pairs. Returns `None` on error. |
-| `generate_answer(question, chunks)` | Builds context from retrieved chunks formatted as `[Page N]\ntext`, sends to Gemini with a grounded-only prompt. Returns `{"answer": str, "citations": [{"page_number": int, "snippet": str}]}`. Returns `None` on error. |
+**`GET /dictionary/{word}`** — Free Dictionary API proxy; returns `{word, phonetic, definition, example, synonyms}`
 
 ---
 
 ### `db_utils.py`
-Supabase (PostgreSQL + pgvector) interactions.
+Supabase (PostgreSQL + pgvector) interactions. Uses `SUPABASE_SERVICE_ROLE_KEY` — bypasses RLS.
 
 | Function | Description |
 |---|---|
 | `get_supabase_client()` | Initializes client using `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY`. |
-| `save_document_metadata(user_id, filename, content)` | Inserts into `documents`. Returns inserted row list or `None` on error. |
-| `get_user_documents(user_id)` | Returns `[{id, filename, created_at}]` for a user, newest first. Returns `[]` on error. |
-| `get_document_content(document_id)` | Fetches the `content` field of a document by its UUID. Returns `str` or `None`. |
-| `get_document_cache(document_id)` | Returns `{"summary", "quiz", "flashcards"}` from the documents row. Returns `None` on error. Used by AI endpoints to skip re-generation. |
-| `save_document_cache(document_id, data)` | Updates AI cache columns (`summary`, `quiz`, `flashcards`) on an existing document row. `data` is a partial dict with only the keys to update. Returns `True`/`False`. |
-| `search_chunks(document_id, query_embedding, match_count, match_threshold)` | Calls `match_documents` RPC with a query embedding. Defaults: top 5 chunks, 0.3 similarity threshold. Returns list of matching chunks with `content`, `metadata`, `similarity`. |
-| `save_document_chunks(document_id, chunks)` | Batch-inserts into `document_chunks`. Each chunk must have `content`, `metadata`, and `embedding` keys. Returns `True`/`False`. |
+| `save_document_metadata(user_id, filename, content)` | Inserts into `documents`. `user_id` is always required (anonymous or real). Returns inserted row list or `None`. |
+| `get_profile(user_id)` | Returns `{documents_used, document_quota}` from `profiles` table. Returns `None` on error. |
+| `increment_documents_used(user_id)` | Calls `increment_documents_used(uid)` RPC — atomic increment of `profiles.documents_used`. |
+| `get_user_documents(user_id)` | Returns `[{id, filename, created_at}]` for a user, newest first. |
+| `get_user_document_filenames(user_id)` | Returns `list[str]` of S3 filenames for all documents owned by the user — used by `DELETE /account` before DB deletion. |
+| `get_document_content(document_id)` | Fetches the `content` field by UUID. Returns `str` or `None`. |
+| `get_document_cache(document_id)` | Returns `{summary, quiz, flashcards}`. Returns `None` on error. |
+| `save_document_cache(document_id, data)` | Updates AI cache columns. `data` is a partial dict. Returns `True`/`False`. |
+| `clear_summary_cache(document_id)` | Nulls `summary` and `quiz`. Returns `True`/`False`. |
+| `clear_flashcards_cache(document_id)` | Nulls `flashcards`. Returns `True`/`False`. |
+| `search_chunks(document_id, query_embedding, match_count, match_threshold)` | Calls `match_documents` RPC. Defaults: top 10 chunks, 0.3 threshold. |
+| `save_document_chunks(document_id, chunks)` | Batch-inserts into `document_chunks`. Each chunk needs `content`, `metadata`, `embedding`. |
 
 **Supabase tables:**
 
@@ -127,7 +124,8 @@ Supabase (PostgreSQL + pgvector) interactions.
 | Column | Type | Notes |
 |---|---|---|
 | `id` | uuid | PK, auto-generated |
-| `user_id` | uuid | FK → auth.users |
+| `user_id` | uuid | FK → auth.users; always set (anonymous or real auth user) |
+| `guest_token` | uuid | Legacy column — unused, left for existing rows |
 | `filename` | text | UUID-prefixed S3 key |
 | `content` | text | Full extracted text |
 | `summary` | text | AI-generated summary (cached) |
@@ -135,6 +133,7 @@ Supabase (PostgreSQL + pgvector) interactions.
 | `flashcards` | jsonb | AI-generated flashcards (cached) |
 | `embedding` | vector | Unused (reserved) |
 | `created_at` | timestamptz | Auto |
+| `updated_at` | timestamptz | Auto-updated on any row change (used by cleanup cron) |
 
 `document_chunks`
 | Column | Type | Notes |
@@ -145,38 +144,64 @@ Supabase (PostgreSQL + pgvector) interactions.
 | `metadata` | jsonb | `{"page_number": N}` |
 | `embedding` | vector(1536) | OpenAI embedding |
 
-**RPC: `match_documents(query_embedding, match_threshold, match_count, filter_document_id)`**
-Cosine similarity search on `document_chunks` filtered by `document_id`. Returns `(id, document_id, content, metadata, similarity)`.
+`profiles`
+| Column | Type | Notes |
+|---|---|---|
+| `id` | uuid | PK, FK → auth.users |
+| `documents_used` | int | Incremented on each upload or claim |
+| `document_quota` | int | Default 4 (free tier) |
+| `full_name` | text | From Supabase auth profile |
+| `upload_credits` | int | Legacy column (unused by backend) |
+| `tier` | text | Legacy column (unused by backend) |
+| `created_at` | timestamptz | Auto |
+
+**RPC functions:**
+- `match_documents(query_embedding, match_threshold, match_count, filter_document_id)` — cosine similarity search on `document_chunks` filtered by document.
+- `increment_documents_used(uid)` — atomically increments `profiles.documents_used` for a user.
+
+**pg_cron job:**
+- `cleanup-anonymous-documents` — runs daily at 3 AM; deletes `documents` whose `user_id` belongs to an anonymous Supabase auth user created more than 30 days ago.
+
+---
+
+### `pdf_utils.py`
+PDF processing using **PyMuPDF** (`fitz`) and **LangChain text splitters**.
+
+| Function | Description |
+|---|---|
+| `extract_text_from_pdf(file_bytes)` | Concatenates all page text with double newlines. Returns `""` on error. |
+| `extract_chunks_from_pdf(file_bytes)` | Page-anchored chunking (800 chars, 100-char overlap per page). No cross-page chunks. Returns `[{content, metadata: {page_number}}]`. |
+
+---
+
+### `embedding_utils.py`
+
+| Function | Description |
+|---|---|
+| `embed_texts(texts)` | Batch-embeds via `text-embedding-3-small`. Returns `list[list[float]]` (1536-dim). |
+
+---
+
+### `gemini_utils.py`
+Gemini 3.1 Flash Lite. All functions enforce JSON output via `response_mime_type="application/json"`.
+
+| Function | Description |
+|---|---|
+| `generate_summary_and_quiz(text)` | Returns `{summary, quiz}` — 10 multiple choice questions. `None` on error. |
+| `generate_flashcards(text)` | Returns `{flashcards}` — 10 Q&A pairs. `None` on error. |
+| `generate_answer(question, chunks)` | Grounded-only prompt with chunk context. Returns `{answer, citations}`. `None` on error. |
 
 ---
 
 ### `s3_utils.py`
-AWS S3 interactions.
 
 | Function | Description |
 |---|---|
-| `get_s3_client()` | Creates boto3 S3 client from `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`. |
-| `upload_to_s3(file_obj, filename)` | Streams file to S3 bucket. Sets `ContentType: application/pdf`. Returns S3 key or `None`. |
-| `download_from_s3(filename)` | Downloads a file from S3 and returns raw bytes. Used by the PDF proxy endpoint. Returns `None` on error. |
-| `create_presigned_url(filename, expiration)` | Generates a temporary signed URL (default 1-hour). |
-
----
-
-### `requirements.txt`
-Key dependencies:
-
-| Package | Purpose |
-|---|---|
-| `fastapi` + `uvicorn` | Web framework and ASGI server |
-| `boto3` | AWS SDK — S3 uploads |
-| `supabase` | Supabase Python client |
-| `pymupdf` | PDF parsing and text extraction |
-| `openai` | OpenAI SDK — embeddings (`text-embedding-3-small`) |
-| `langchain-text-splitters` | `RecursiveCharacterTextSplitter` for page-anchored chunking |
-| `python-dotenv` | Loads `.env` into environment |
-| `python-multipart` | FastAPI multipart/form-data file upload support |
-| `langchain`, `langchain-openai`, `langchain-pinecone` | Reserved for future RAG chain work |
-| `google-genai` | Gemini 3.1 Flash Lite — summary, quiz, and flashcard generation |
+| `get_s3_client()` | Creates boto3 client from env vars. |
+| `upload_to_s3(file_obj, filename)` | Streams to S3. Returns S3 key or `None`. |
+| `download_from_s3(filename)` | Returns raw bytes or `None`. |
+| `create_presigned_url(filename, expiration)` | 1-hour signed URL. |
+| `delete_from_s3(filename)` | Deletes a single object from S3 by key. Returns `bool`. |
 
 ---
 
@@ -199,11 +224,8 @@ GEMINI_API_KEY=
 ## Running Locally
 
 ```powershell
-# Activate virtual environment
 .\venv\Scripts\Activate.ps1
-
-# Start the dev server
 uvicorn main:app --reload
 ```
 
-API docs available at `http://localhost:8000/docs`.
+API docs: `http://localhost:8000/docs`

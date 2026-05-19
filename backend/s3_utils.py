@@ -45,7 +45,7 @@ def create_presigned_url(filename: str, expiration: int = 3600):
     """Generates a temporary, secure URL to view a private PDF (Valid for 1 hour)."""
     s3 = get_s3_client()
     bucket_name = os.getenv("AWS_S3_BUCKET")
-    
+
     try:
         url = s3.generate_presigned_url(
             'get_object',
@@ -56,3 +56,14 @@ def create_presigned_url(filename: str, expiration: int = 3600):
     except ClientError as e:
         print(f"Presigned URL Error: {e}")
         return None
+
+def delete_from_s3(filename: str) -> bool:
+    """Deletes a single object from S3 by key."""
+    s3 = get_s3_client()
+    bucket_name = os.getenv("AWS_S3_BUCKET")
+    try:
+        s3.delete_object(Bucket=bucket_name, Key=filename)
+        return True
+    except ClientError as e:
+        print(f"S3 Delete Error: {e}")
+        return False

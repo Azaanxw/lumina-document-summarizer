@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useRef, useState } from "react"
-import { askQuestion, type Citation } from "@/lib/api"
+import { askQuestion, RateLimitError, type Citation } from "@/lib/api"
 import { friendlyError } from "@/lib/errors"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
@@ -21,11 +21,32 @@ interface QAChatProps {
   onCitationClick?: (pageNumber: number, snippets: string[]) => void
 }
 
+function formatCountdown(seconds: number): string {
+  const m = Math.floor(seconds / 60)
+  const s = seconds % 60
+  return `${m}:${String(s).padStart(2, "0")}`
+}
+
 export function QAChat({ documentId, onCitationClick }: QAChatProps) {
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState("")
   const [loading, setLoading] = useState(false)
+  const [rateLimitedUntil, setRateLimitedUntil] = useState<number | null>(null)
+  const [secondsLeft, setSecondsLeft] = useState(0)
   const bottomRef = useRef<HTMLDivElement>(null)
+
+  // Countdown ticker
+  useEffect(() => {
+    if (!rateLimitedUntil) return
+    const tick = () => {
+      const left = Math.max(0, Math.ceil((rateLimitedUntil - Date.now()) / 1000))
+      setSecondsLeft(left)
+      if (left === 0) setRateLimitedUntil(null)
+    }
+    tick()
+    const id = setInterval(tick, 1000)
+    return () => clearInterval(id)
+  }, [rateLimitedUntil])
 
   function scrollToBottom() {
     setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: "smooth" }), 50)
@@ -34,7 +55,7 @@ export function QAChat({ documentId, onCitationClick }: QAChatProps) {
   async function submit(e: React.FormEvent) {
     e.preventDefault()
     const question = input.trim()
-    if (!question || loading) return
+    if (!question || loading || rateLimitedUntil) return
 
     setInput("")
     setLoading(true)
@@ -53,17 +74,28 @@ export function QAChat({ documentId, onCitationClick }: QAChatProps) {
       )
       scrollToBottom()
     } catch (err) {
-      const raw = err instanceof Error ? err.message : ""
-      setMessages((prev) =>
-        prev.map((msg, i) =>
-          i === prev.length - 1 ? { ...msg, error: friendlyError(raw) } : msg
+      if (err instanceof RateLimitError) {
+        // Remove the pending message and return the question to the input
+        setMessages((prev) => prev.slice(0, -1))
+        setInput(question)
+        setRateLimitedUntil(Date.now() + err.retryAfter * 1000)
+      } else {
+        const raw = err instanceof Error ? err.message : ""
+        setMessages((prev) =>
+          prev.map((msg, i) =>
+            i === prev.length - 1
+              ? { ...msg, error: friendlyError(raw, "Failed to get an answer. Please try again.") }
+              : msg
+          )
         )
-      )
-      scrollToBottom()
+        scrollToBottom()
+      }
     } finally {
       setLoading(false)
     }
   }
+
+  const isRateLimited = !!rateLimitedUntil
 
   return (
     <div className="flex flex-col flex-1 min-h-0 gap-2">
@@ -128,14 +160,21 @@ export function QAChat({ documentId, onCitationClick }: QAChatProps) {
         <Input
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          placeholder="Ask a question…"
-          disabled={loading}
+          placeholder={isRateLimited ? "Rate limit reached…" : "Ask a question…"}
+          disabled={loading || isRateLimited}
           className="flex-1"
         />
-        <Button type="submit" disabled={loading || !input.trim()}>
+        <Button type="submit" disabled={loading || isRateLimited || !input.trim()}>
           <Send className="size-4" />
         </Button>
       </form>
+
+      {isRateLimited && (
+        <p className="text-xs text-muted-foreground text-center">
+          You&apos;ve asked 20 questions this hour. Come back in{" "}
+          <span className="font-medium tabular-nums">{formatCountdown(secondsLeft)}</span> to continue.
+        </p>
+      )}
     </div>
   )
 }

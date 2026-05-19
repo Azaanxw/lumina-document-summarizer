@@ -1,9 +1,17 @@
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import FastAPI, UploadFile, File, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
-from s3_utils import upload_to_s3, create_presigned_url, download_from_s3
-from db_utils import save_document_metadata, save_document_chunks, get_document_content, search_chunks, get_user_documents, get_document_filename, get_document_cache, save_document_cache, clear_summary_cache, clear_flashcards_cache
+from dataclasses import dataclass
+from s3_utils import upload_to_s3, create_presigned_url, download_from_s3, delete_from_s3
+from db_utils import (
+    get_supabase_client,
+    save_document_metadata, save_document_chunks, get_document_content,
+    search_chunks, get_user_documents, get_document_filename, get_document_cache,
+    save_document_cache, clear_summary_cache, clear_flashcards_cache,
+    get_profile, increment_documents_used, get_user_document_filenames,
+)
 from dotenv import load_dotenv
 from pdf_utils import extract_text_from_pdf, extract_chunks_from_pdf
 from embedding_utils import embed_texts
@@ -11,6 +19,8 @@ from gemini_utils import generate_summary_and_quiz, generate_flashcards, generat
 import uuid
 import httpx
 import asyncio
+import time
+from collections import defaultdict
 
 load_dotenv()
 app = FastAPI()
@@ -22,7 +32,64 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-MOCK_USER_ID = "57de27a3-60c2-430e-8896-f8daf0e835d9"
+# ---------------------------------------------------------------------------
+# Auth
+# ---------------------------------------------------------------------------
+
+security = HTTPBearer(auto_error=False)
+
+@dataclass
+class AuthUser:
+    user_id: str
+    is_anonymous: bool
+
+def get_current_user(
+    credentials: HTTPAuthorizationCredentials | None = Depends(security),
+) -> AuthUser | None:
+    """Returns AuthUser if the Bearer JWT is valid, otherwise None."""
+    if credentials is None:
+        return None
+    try:
+        supabase = get_supabase_client()
+        result = supabase.auth.get_user(credentials.credentials)
+        if result is None or result.user is None:
+            return None
+        return AuthUser(
+            user_id=str(result.user.id),
+            is_anonymous=getattr(result.user, "is_anonymous", False) or False,
+        )
+    except Exception:
+        return None
+
+def require_auth(auth: AuthUser | None = Depends(get_current_user)) -> AuthUser:
+    """Raises 401 if there is no valid session."""
+    if auth is None:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    return auth
+
+# ---------------------------------------------------------------------------
+# Rate limiting (/ask — 20 questions per hour, rolling window)
+# ---------------------------------------------------------------------------
+
+_question_timestamps: dict[str, list[float]] = defaultdict(list)
+QUESTION_LIMIT = 20
+QUESTION_WINDOW = 3600
+
+def check_question_rate_limit(key: str) -> tuple[bool, int]:
+    """Returns (allowed, seconds_until_reset). Caller provides user_id or guest_token."""
+    now = time.time()
+    window_start = now - QUESTION_WINDOW
+    timestamps = [t for t in _question_timestamps[key] if t > window_start]
+    _question_timestamps[key] = timestamps
+    if len(timestamps) >= QUESTION_LIMIT:
+        reset_in = int(timestamps[0] + QUESTION_WINDOW - now) + 1
+        return False, reset_in
+    _question_timestamps[key].append(now)
+    return True, 0
+
+# ---------------------------------------------------------------------------
+# Models
+# ---------------------------------------------------------------------------
 
 class DocumentRequest(BaseModel):
     document_id: str
@@ -31,30 +98,63 @@ class AskRequest(BaseModel):
     document_id: str
     question: str
 
+# ---------------------------------------------------------------------------
+# Endpoints
+# ---------------------------------------------------------------------------
+
+@app.delete("/account")
+def delete_account(auth: AuthUser = Depends(require_auth)):
+    """Deletes the user's S3 files, then removes the auth user (cascades to DB rows)."""
+    filenames = get_user_document_filenames(auth.user_id)
+    for filename in filenames:
+        delete_from_s3(filename)
+    supabase = get_supabase_client()
+    supabase.auth.admin.delete_user(auth.user_id)
+    return {"ok": True}
+
 @app.get("/documents")
-def list_documents():
-    docs = get_user_documents(MOCK_USER_ID)
-    return {"documents": docs}
+def list_documents(auth: AuthUser = Depends(require_auth)):
+    docs = get_user_documents(auth.user_id)
+    profile = get_profile(auth.user_id)
+    return {
+        "documents": docs,
+        "quota": {
+            "used": len(docs),
+            "total": 1 if auth.is_anonymous else (profile["document_quota"] if profile else 4),
+        },
+    }
 
 @app.post("/upload")
-async def upload_pdf(file: UploadFile = File(...)):
+async def upload_pdf(
+    file: UploadFile = File(...),
+    auth: AuthUser | None = Depends(get_current_user),
+):
+    if auth is None:
+        raise HTTPException(status_code=401, detail="Authentication required")
+
     if file.content_type != "application/pdf":
         raise HTTPException(status_code=400, detail="Only PDF files are allowed")
 
     if not file.filename:
         raise HTTPException(status_code=400, detail="Filename is required")
 
+    doc_count = len(get_user_documents(auth.user_id))
+    if auth.is_anonymous:
+        if doc_count >= 1:
+            raise HTTPException(status_code=403, detail="quota_exceeded")
+    else:
+        profile = get_profile(auth.user_id)
+        if profile and doc_count >= profile["document_quota"]:
+            raise HTTPException(status_code=403, detail="quota_exceeded")
+
     file_bytes = await file.read()
 
-    # Full text for documents.content column
     extracted_text = extract_text_from_pdf(file_bytes)
     if not extracted_text:
         print("Warning: No text could be extracted from this PDF.")
 
-    # Page-anchored chunks for RAG
     chunks = extract_chunks_from_pdf(file_bytes)
 
-    # Batch embed all chunks in one API call
     if chunks:
         embeddings = embed_texts([c["content"] for c in chunks])
         for i, chunk in enumerate(chunks):
@@ -67,9 +167,12 @@ async def upload_pdf(file: UploadFile = File(...)):
     if not saved_filename:
         raise HTTPException(status_code=500, detail="Failed to upload to S3")
 
-    db_record = save_document_metadata(MOCK_USER_ID, saved_filename, extracted_text)
+    db_record = save_document_metadata(auth.user_id, saved_filename, extracted_text)
     if not db_record:
         raise HTTPException(status_code=500, detail="Failed to save to database")
+
+    if not auth.is_anonymous:
+        increment_documents_used(auth.user_id)
 
     document_id: str = str(db_record[0]["id"])  # type: ignore
 
@@ -81,7 +184,7 @@ async def upload_pdf(file: UploadFile = File(...)):
         "filename": saved_filename,
         "chunks_stored": len(chunks),
         "text_preview": extracted_text[:100] + "...",
-        "database_record": db_record
+        "database_record": db_record,
     }
 
 @app.post("/process-document")
@@ -134,7 +237,18 @@ def generate_cards(req: DocumentRequest):
     return result
 
 @app.post("/ask")
-def ask(req: AskRequest):
+def ask(
+    req: AskRequest,
+    auth: AuthUser | None = Depends(get_current_user),
+):
+    rate_limit_key = auth.user_id if auth else req.document_id
+    allowed, retry_after = check_question_rate_limit(rate_limit_key)
+    if not allowed:
+        raise HTTPException(
+            status_code=429,
+            detail={"error": "rate_limited", "retry_after": retry_after},
+        )
+
     query_embedding = embed_texts([req.question])[0]
     chunks = search_chunks(req.document_id, query_embedding)
 
@@ -189,7 +303,6 @@ async def dictionary(word: str):
     meaning = entry["meanings"][0]
     first_def = meaning["definitions"][0]
 
-    # Find the first example across all definitions in all meanings
     example = ""
     for m in entry["meanings"]:
         for d in m["definitions"]:

@@ -11,9 +11,10 @@ import { ChevronLeft, ChevronRight, RotateCcw } from "lucide-react"
 
 interface SummaryViewProps {
   documentId: string
+  onLoaded?: () => void
 }
 
-export function SummaryView({ documentId }: SummaryViewProps) {
+export function SummaryView({ documentId, onLoaded }: SummaryViewProps) {
   const [loading, setLoading] = useState(true)
   const [clearing, setClearing] = useState(false)
   const [error, setError] = useState("")
@@ -29,6 +30,7 @@ export function SummaryView({ documentId }: SummaryViewProps) {
         if (cancelled) return
         setSummary(data.summary)
         setQuiz(data.quiz)
+        onLoaded?.()
       })
       .catch((err) => {
         if (cancelled) return
