@@ -82,7 +82,8 @@ def mock_openai_generate():
 
 
 @pytest.fixture(autouse=True)
-def clear_rate_limit_state():
-    main._question_timestamps.clear()
-    yield
-    main._question_timestamps.clear()
+def mock_rate_limiter():
+    """Allow all requests through the rate limiter by default."""
+    with patch.object(main, "db_rate_limiter") as mock_limiter:
+        mock_limiter.check.return_value = (True, 0)
+        yield mock_limiter

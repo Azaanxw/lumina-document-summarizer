@@ -1,5 +1,4 @@
 from unittest.mock import patch
-import main
 
 REAL_USER_ID = "user-test-123"
 
@@ -39,15 +38,14 @@ def test_ask_returns_500_when_generate_answer_fails(authed_client):
     assert response.status_code == 500
 
 
-def test_ask_uses_user_id_as_rate_limit_key(authed_client):
+def test_ask_uses_user_id_as_rate_limit_key(authed_client, mock_rate_limiter):
     with patch("main.verify_document_owner", return_value=True), \
          patch("main.embed_texts", return_value=[[0.1] * 1536]), \
          patch("main.search_chunks", return_value=CHUNKS), \
          patch("main.generate_answer", return_value=ANSWER):
         authed_client.post("/ask", json={"document_id": "doc-1", "question": "Q?"})
 
-    assert REAL_USER_ID in main._question_timestamps
-    assert len(main._question_timestamps[REAL_USER_ID]) == 1
+    mock_rate_limiter.check.assert_called_once_with(REAL_USER_ID, "ask")
 
 
 def test_ask_openai_fallback_used_when_gemini_raises(authed_client):

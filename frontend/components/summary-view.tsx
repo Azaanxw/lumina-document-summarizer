@@ -197,14 +197,14 @@ function QuizCarousel({ questions }: { questions: QuizQuestion[] }) {
 
         {/* Options */}
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-          {question.options.map((opt) => {
+          {question.options.map((opt, i) => {
             const isSelected = selected === opt
             const isCorrect = letter(opt) === letter(question.answer)
             const revealed = selected !== null
 
             return (
               <button
-                key={opt}
+                key={i}
                 onClick={() => choose(opt)}
                 className={cn(
                   "rounded-lg border px-3 py-2 text-left text-sm transition-colors",

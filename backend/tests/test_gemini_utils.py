@@ -24,6 +24,25 @@ def _mock_openai(response_dict: dict) -> MagicMock:
     return mock
 
 
+def test_gemini_client_is_created_with_timeout():
+    mock_constructor = MagicMock(return_value=_mock_gemini(SUMMARY_RESPONSE))
+    with patch("gemini_utils.genai.Client", mock_constructor):
+        generate_summary_and_quiz("document text")
+    _, kwargs = mock_constructor.call_args
+    assert kwargs.get("http_options") == {"timeout": 30}
+
+
+def test_openai_chat_is_called_with_timeout():
+    bad_gemini = MagicMock()
+    bad_gemini.models.generate_content.side_effect = Exception("Gemini down")
+    mock_openai = _mock_openai(SUMMARY_RESPONSE)
+    with patch("gemini_utils.genai.Client", return_value=bad_gemini), \
+         patch("gemini_utils.OpenAI", return_value=mock_openai):
+        generate_summary_and_quiz("document text")
+    call_kwargs = mock_openai.chat.completions.create.call_args.kwargs
+    assert call_kwargs.get("timeout") == 30
+
+
 def test_generate_summary_and_quiz_returns_dict_on_gemini_success():
     with patch("gemini_utils.genai.Client", return_value=_mock_gemini(SUMMARY_RESPONSE)):
         result = generate_summary_and_quiz("document text")

@@ -1,8 +1,5 @@
 fastapi
 uvicorn
-langchain
-langchain-openai
-langchain-pinecone
 python-dotenv
 python-multipart
 httpx
@@ -13,6 +10,7 @@ openai
 langchain-text-splitters
 google-genai
 slowapi
+sentry-sdk[fastapi]
 
 # dev / testing
 pytest

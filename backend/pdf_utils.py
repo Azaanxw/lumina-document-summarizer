@@ -1,5 +1,9 @@
+import logging
 import fitz  # PyMuPDF
 from langchain_text_splitters import RecursiveCharacterTextSplitter  # pyright: ignore[reportMissingImports]
+
+logger = logging.getLogger(__name__)
+
 
 def extract_text_from_pdf(file_bytes: bytes) -> str:
     """Extracts all text from a PDF file stored in memory."""
@@ -12,7 +16,7 @@ def extract_text_from_pdf(file_bytes: bytes) -> str:
         pdf_document.close()
         return text.strip()
     except Exception as e:
-        print(f"PDF Extraction Error: {e}")
+        logger.error(f"PDF Extraction Error: {e}")
         return ""
 
 def extract_chunks_from_pdf(file_bytes: bytes) -> list[dict]:
@@ -32,5 +36,5 @@ def extract_chunks_from_pdf(file_bytes: bytes) -> list[dict]:
                 })
         pdf_document.close()
     except Exception as e:
-        print(f"PDF Chunking Error: {e}")
+        logger.error(f"PDF Chunking Error: {e}")
     return chunks

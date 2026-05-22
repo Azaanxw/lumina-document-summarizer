@@ -1,3 +1,8 @@
+import logging
+import os
+import sentry_sdk
+from sentry_sdk.integrations.fastapi import FastApiIntegration
+from sentry_sdk.integrations.starlette import StarletteIntegration
 from fastapi import FastAPI, Request, UploadFile, File, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
@@ -20,13 +25,23 @@ from gemini_utils import generate_summary_and_quiz, generate_flashcards, generat
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
+from logging_config import setup_logging
+from rate_limiter import DBRateLimiter
 import uuid
 import httpx
 import asyncio
-import time
-from collections import defaultdict
 
 load_dotenv()
+setup_logging()
+
+sentry_sdk.init(
+    dsn=os.getenv("SENTRY_DSN"),
+    integrations=[StarletteIntegration(), FastApiIntegration()],
+    traces_sample_rate=0.1,
+    environment=os.getenv("ENVIRONMENT", "development"),
+)
+
+logger = logging.getLogger(__name__)
 app = FastAPI()
 
 limiter = Limiter(key_func=get_remote_address)
@@ -86,25 +101,11 @@ def require_auth(auth: AuthUser | None = Depends(get_current_user)) -> AuthUser:
     return auth
 
 # ---------------------------------------------------------------------------
-# Rate limiting (/ask — 20 questions per hour, rolling window)
+# Rate limiting (/ask — 20 questions per hour, rolling window, DB-backed)
 # ---------------------------------------------------------------------------
 
-_question_timestamps: dict[str, list[float]] = defaultdict(list)
-QUESTION_LIMIT = 20
-QUESTION_WINDOW = 3600
 MAX_FILE_SIZE = 20 * 1024 * 1024  # 20 MB
-
-def check_question_rate_limit(key: str) -> tuple[bool, int]:
-    """Returns (allowed, seconds_until_reset). Caller provides user_id or guest_token."""
-    now = time.time()
-    window_start = now - QUESTION_WINDOW
-    timestamps = [t for t in _question_timestamps[key] if t > window_start]
-    _question_timestamps[key] = timestamps
-    if len(timestamps) >= QUESTION_LIMIT:
-        reset_in = int(timestamps[0] + QUESTION_WINDOW - now) + 1
-        return False, reset_in
-    _question_timestamps[key].append(now)
-    return True, 0
+db_rate_limiter = DBRateLimiter(limit=10, window_seconds=3600)
 
 # ---------------------------------------------------------------------------
 # Models
@@ -178,7 +179,7 @@ async def upload_pdf(
 
     extracted_text = extract_text_from_pdf(file_bytes)
     if not extracted_text:
-        print("Warning: No text could be extracted from this PDF.")
+        logger.warning("No text could be extracted from this PDF.")
 
     chunks = extract_chunks_from_pdf(file_bytes)
 
@@ -280,8 +281,7 @@ def ask(
 ):
     if not verify_document_owner(req.document_id, auth.user_id):
         raise HTTPException(status_code=403, detail="forbidden")
-    rate_limit_key = auth.user_id
-    allowed, retry_after = check_question_rate_limit(rate_limit_key)
+    allowed, retry_after = db_rate_limiter.check(auth.user_id, "ask")
     if not allowed:
         raise HTTPException(
             status_code=429,
@@ -335,7 +335,7 @@ def get_pdf_proxy(document_id: str, auth: AuthUser = Depends(require_auth)):
 
 @app.get("/dictionary/{word}")
 async def dictionary(word: str):
-    async with httpx.AsyncClient() as client:
+    async with httpx.AsyncClient(timeout=5.0) as client:
         dict_resp, syn_resp = await asyncio.gather(
             client.get(f"https://api.dictionaryapi.dev/api/v2/entries/en/{word}"),
             client.get(f"https://api.datamuse.com/words?rel_syn={word}&max=5")

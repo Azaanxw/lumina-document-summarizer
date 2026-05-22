@@ -1,54 +1,79 @@
-import time
-from unittest.mock import patch
-import main
+from unittest.mock import MagicMock, patch
+from rate_limiter import DBRateLimiter
 
 
-def test_rate_limit_allows_up_to_20_requests():
-    for _ in range(20):
-        allowed, _ = main.check_question_rate_limit("user-1")
-        assert allowed is True
+def _make_sb_mock(rows: list[dict]):
+    """Build a supabase mock where select().eq().eq().order().execute() returns rows."""
+    mock_sb = MagicMock()
+
+    # delete chain
+    (mock_sb.table.return_value
+        .delete.return_value
+        .eq.return_value
+        .eq.return_value
+        .lt.return_value
+        .execute.return_value) = MagicMock()
+
+    # select chain: .select().eq().eq().order().execute()
+    result = MagicMock()
+    result.data = rows
+    (mock_sb.table.return_value
+        .select.return_value
+        .eq.return_value
+        .eq.return_value
+        .order.return_value
+        .execute.return_value) = result
+
+    # insert chain
+    (mock_sb.table.return_value
+        .insert.return_value
+        .execute.return_value) = MagicMock()
+
+    return mock_sb
 
 
-def test_rate_limit_blocks_21st_request():
-    for _ in range(20):
-        main.check_question_rate_limit("user-1")
-    allowed, retry_after = main.check_question_rate_limit("user-1")
+def test_db_rate_limiter_allows_under_limit():
+    rows = [{"created_at": "2024-01-01T12:00:00+00:00"}] * 5
+    mock_sb = _make_sb_mock(rows)
+    with patch("db_utils.get_supabase_client", return_value=mock_sb):
+        limiter = DBRateLimiter(limit=20, window_seconds=3600)
+        allowed, retry_after = limiter.check("user-1", "ask")
+    assert allowed is True
+    assert retry_after == 0
+
+
+def test_db_rate_limiter_allows_at_limit_minus_one():
+    rows = [{"created_at": "2024-01-01T12:00:00+00:00"}] * 19
+    mock_sb = _make_sb_mock(rows)
+    with patch("db_utils.get_supabase_client", return_value=mock_sb):
+        limiter = DBRateLimiter(limit=20, window_seconds=3600)
+        allowed, _ = limiter.check("user-1", "ask")
+    assert allowed is True
+
+
+def test_db_rate_limiter_blocks_at_limit():
+    rows = [{"created_at": "2024-01-01T12:00:00+00:00"}] * 20
+    mock_sb = _make_sb_mock(rows)
+    with patch("db_utils.get_supabase_client", return_value=mock_sb):
+        limiter = DBRateLimiter(limit=20, window_seconds=3600)
+        allowed, retry_after = limiter.check("user-1", "ask")
     assert allowed is False
     assert retry_after > 0
 
 
-def test_rate_limit_reset_calculates_correct_retry_after():
-    fixed_time = 1000.0
-    with patch("main.time.time", return_value=fixed_time):
-        for _ in range(20):
-            main.check_question_rate_limit("user-1")
-    with patch("main.time.time", return_value=fixed_time + 10):
-        allowed, retry_after = main.check_question_rate_limit("user-1")
-    assert allowed is False
-    # timestamps[0]=1000, window=3600, now=1010 → reset_in = int(1000+3600-1010)+1 = 3591
-    assert retry_after == 3591
-
-
-def test_rate_limit_window_rolls_so_old_timestamps_expire():
-    base_time = 1000.0
-    with patch("main.time.time", return_value=base_time):
-        for _ in range(20):
-            main.check_question_rate_limit("user-1")
-    with patch("main.time.time", return_value=base_time + 3601):
-        allowed, _ = main.check_question_rate_limit("user-1")
+def test_db_rate_limiter_fails_open_on_db_error():
+    with patch("db_utils.get_supabase_client", side_effect=Exception("DB down")):
+        limiter = DBRateLimiter(limit=20, window_seconds=3600)
+        allowed, retry_after = limiter.check("user-1", "ask")
     assert allowed is True
+    assert retry_after == 0
 
 
-def test_ask_returns_429_with_retry_after_when_rate_limited(authed_client):
-    from unittest.mock import patch as upatch
-    REAL_USER_ID = "user-test-123"
-    now = time.time()
-    main._question_timestamps[REAL_USER_ID] = [now] * 20
-
-    with upatch("main.verify_document_owner", return_value=True):
+def test_ask_returns_429_with_retry_after_when_rate_limited(authed_client, mock_rate_limiter):
+    mock_rate_limiter.check.return_value = (False, 30)
+    with patch("main.verify_document_owner", return_value=True):
         response = authed_client.post("/ask", json={"document_id": "rate-doc", "question": "Q?"})
-
     assert response.status_code == 429
     detail = response.json()["detail"]
     assert detail["error"] == "rate_limited"
-    assert "retry_after" in detail
+    assert detail["retry_after"] == 30

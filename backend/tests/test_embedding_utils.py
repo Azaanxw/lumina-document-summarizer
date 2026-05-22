@@ -25,6 +25,7 @@ def test_embed_texts_calls_correct_model():
     mock_client.embeddings.create.assert_called_once_with(
         model="text-embedding-3-small",
         input=["hello"],
+        timeout=30,
     )
 
 
@@ -41,4 +42,5 @@ def test_embed_texts_handles_multiple_inputs():
     mock_client.embeddings.create.assert_called_once_with(
         model="text-embedding-3-small",
         input=texts,
+        timeout=30,
     )

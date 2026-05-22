@@ -189,10 +189,10 @@ Zero friction entry. The user gets full value from their first document before e
 - [ ] Rotate all API keys and move secrets to AWS Secrets Manager *(needs AWS infra — do after ECS deploy)*
 
 ### Reliability (code changes — before deployment)
-- [ ] Add structured application logging (replace print statements with Python logging)
-- [ ] Add request timeout handling for Gemini and OpenAI calls
-- [ ] Replace in-memory rate limiter with Redis or DB-backed store — current implementation breaks under multiple ECS instances since each container has isolated memory
-- [ ] Integrate error tracking (Sentry) for both frontend and backend
+- [x] Add structured application logging (replace print statements with Python logging)
+- [x] Add request timeout handling for Gemini and OpenAI calls
+- [x] Replace in-memory rate limiter with Redis or DB-backed store — current implementation breaks under multiple ECS instances since each container has isolated memory
+- [x] Integrate error tracking (Sentry) for both frontend and backend
 - [ ] Add Supabase Edge Function or cron webhook to delete S3 objects for expired anonymous documents *(can follow post-deploy)*
 
 ### Infrastructure & Deployment

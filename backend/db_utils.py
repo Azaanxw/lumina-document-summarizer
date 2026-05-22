@@ -1,5 +1,9 @@
+import logging
 import os
 from supabase import create_client, Client
+
+logger = logging.getLogger(__name__)
+
 
 def get_supabase_client() -> Client:
     url = os.getenv("SUPABASE_URL")
@@ -19,7 +23,7 @@ def save_document_metadata(user_id: str, filename: str, content: str):
         }).execute()
         return response.data
     except Exception as e:
-        print(f"Database Insert Error: {e}")
+        logger.error(f"Database Insert Error: {e}")
         return None
 
 def get_profile(user_id: str) -> dict | None:
@@ -29,7 +33,7 @@ def get_profile(user_id: str) -> dict | None:
         response = supabase.table("profiles").select("documents_used, document_quota").eq("id", user_id).single().execute()
         return response.data  # type: ignore
     except Exception as e:
-        print(f"Profile Fetch Error: {e}")
+        logger.error(f"Profile Fetch Error: {e}")
         return None
 
 def increment_documents_used(user_id: str) -> bool:
@@ -39,7 +43,7 @@ def increment_documents_used(user_id: str) -> bool:
         supabase.rpc("increment_documents_used", {"uid": user_id}).execute()
         return True
     except Exception as e:
-        print(f"Increment Error: {e}")
+        logger.error(f"Increment Error: {e}")
         return False
 
 def get_document_content(document_id: str) -> str | None:
@@ -49,7 +53,7 @@ def get_document_content(document_id: str) -> str | None:
         response = supabase.table("documents").select("content").eq("id", document_id).single().execute()
         return response.data["content"]  # type: ignore
     except Exception as e:
-        print(f"Document Fetch Error: {e}")
+        logger.error(f"Document Fetch Error: {e}")
         return None
 
 def search_chunks(document_id: str, query_embedding: list[float], match_count: int = 10, match_threshold: float = 0.3) -> list[dict]:
@@ -64,7 +68,7 @@ def search_chunks(document_id: str, query_embedding: list[float], match_count: i
         }).execute()
         return response.data or []  # type: ignore
     except Exception as e:
-        print(f"Chunk Search Error: {e}")
+        logger.error(f"Chunk Search Error: {e}")
         return []
 
 def get_document_filename(document_id: str) -> str | None:
@@ -74,7 +78,7 @@ def get_document_filename(document_id: str) -> str | None:
         response = supabase.table("documents").select("filename").eq("id", document_id).single().execute()
         return response.data["filename"]  # type: ignore
     except Exception as e:
-        print(f"Document Filename Fetch Error: {e}")
+        logger.error(f"Document Filename Fetch Error: {e}")
         return None
 
 def get_user_documents(user_id: str) -> list[dict]:
@@ -84,7 +88,7 @@ def get_user_documents(user_id: str) -> list[dict]:
         response = supabase.table("documents").select("id, filename, created_at").eq("user_id", user_id).order("created_at", desc=True).execute()
         return response.data or []  # type: ignore
     except Exception as e:
-        print(f"Document List Error: {e}")
+        logger.error(f"Document List Error: {e}")
         return []
 
 def get_user_document_filenames(user_id: str) -> list[str]:
@@ -94,7 +98,7 @@ def get_user_document_filenames(user_id: str) -> list[str]:
         response = supabase.table("documents").select("filename").eq("user_id", user_id).execute()
         return [str(row["filename"]) for row in (response.data or [])]  # type: ignore
     except Exception as e:
-        print(f"Get Filenames Error: {e}")
+        logger.error(f"Get Filenames Error: {e}")
         return []
 
 def get_document_cache(document_id: str) -> dict | None:
@@ -104,7 +108,7 @@ def get_document_cache(document_id: str) -> dict | None:
         response = supabase.table("documents").select("summary, quiz, flashcards").eq("id", document_id).single().execute()
         return response.data  # type: ignore
     except Exception as e:
-        print(f"Get Cache Error: {e}")
+        logger.error(f"Get Cache Error: {e}")
         return None
 
 def save_document_cache(document_id: str, data: dict) -> bool:
@@ -114,7 +118,7 @@ def save_document_cache(document_id: str, data: dict) -> bool:
         supabase.table("documents").update(data).eq("id", document_id).execute()
         return True
     except Exception as e:
-        print(f"Save Cache Error: {e}")
+        logger.error(f"Save Cache Error: {e}")
         return False
 
 def clear_summary_cache(document_id: str) -> bool:
@@ -124,7 +128,7 @@ def clear_summary_cache(document_id: str) -> bool:
         supabase.table("documents").update({"summary": None, "quiz": None}).eq("id", document_id).execute()
         return True
     except Exception as e:
-        print(f"Clear Summary Cache Error: {e}")
+        logger.error(f"Clear Summary Cache Error: {e}")
         return False
 
 def clear_flashcards_cache(document_id: str) -> bool:
@@ -134,7 +138,7 @@ def clear_flashcards_cache(document_id: str) -> bool:
         supabase.table("documents").update({"flashcards": None}).eq("id", document_id).execute()
         return True
     except Exception as e:
-        print(f"Clear Flashcards Cache Error: {e}")
+        logger.error(f"Clear Flashcards Cache Error: {e}")
         return False
 
 def save_document_chunks(document_id: str, chunks: list[dict]) -> bool:
@@ -153,7 +157,7 @@ def save_document_chunks(document_id: str, chunks: list[dict]) -> bool:
         supabase.table("document_chunks").insert(rows).execute()
         return True
     except Exception as e:
-        print(f"Chunk Insert Error: {e}")
+        logger.error(f"Chunk Insert Error: {e}")
         return False
 
 def verify_document_owner(document_id: str, user_id: str) -> bool:
@@ -170,5 +174,5 @@ def verify_document_owner(document_id: str, user_id: str) -> bool:
         )
         return response is not None and response.data is not None  # type: ignore
     except Exception as e:
-        print(f"Ownership Check Error: {e}")
+        logger.error(f"Ownership Check Error: {e}")
         return False

@@ -3,10 +3,16 @@ from google.genai import types  # type: ignore
 from openai import OpenAI
 import os
 import json
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 def _get_gemini():
-    return genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+    return genai.Client(
+        api_key=os.getenv("GEMINI_API_KEY"),
+        http_options={"timeout": 30},
+    )
 
 
 def _get_openai():
@@ -29,6 +35,7 @@ def _openai(prompt: str) -> dict:
         model="gpt-5.4-nano-2026-03-17",
         messages=[{"role": "user", "content": prompt}],
         response_format={"type": "json_object"},
+        timeout=30,
     )
     return json.loads(response.choices[0].message.content or "{}")
 
@@ -37,11 +44,11 @@ def _generate(prompt: str, label: str) -> dict | None:
     try:
         return _gemini(prompt)
     except Exception as e:
-        print(f"Gemini {label} Error: {e} — falling back to OpenAI")
+        logger.warning(f"Gemini {label} failed: {e} — falling back to OpenAI")
     try:
         return _openai(prompt)
     except Exception as e:
-        print(f"OpenAI {label} Error: {e}")
+        logger.error(f"OpenAI {label} fallback failed: {e}")
         return None
 
 

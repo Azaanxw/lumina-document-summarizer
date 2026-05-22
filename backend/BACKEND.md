@@ -8,10 +8,12 @@ FastAPI backend for PDF ingestion, RAG-powered Q&A with page citations, AI study
 
 ```
 backend/
-├── main.py             # FastAPI app — all endpoints + auth dependencies + rate limiter
+├── main.py             # FastAPI app — all endpoints, auth, DB-backed rate limiter, Sentry init
+├── logging_config.py   # Centralized logging setup (StreamHandler, LOG_LEVEL env var)
+├── rate_limiter.py     # DBRateLimiter — Supabase-backed rolling window rate limiter
 ├── pdf_utils.py        # PDF text extraction + page-anchored chunking (PyMuPDF)
-├── embedding_utils.py  # Batch text embedding via OpenAI text-embedding-3-small
-├── gemini_utils.py     # Gemini 3.1 Flash Lite — summary, quiz, flashcard generation
+├── embedding_utils.py  # Batch text embedding via OpenAI text-embedding-3-small (timeout=30s)
+├── gemini_utils.py     # Gemini 3.1 Flash Lite — summary, quiz, flashcard generation (timeout=30s)
 ├── db_utils.py         # Supabase client — all DB queries including auth/profile/claim
 ├── s3_utils.py         # AWS S3 upload and presigned URL helpers
 ├── requirements.txt    # Python dependencies
@@ -21,13 +23,13 @@ backend/
 ├── venv/               # Python virtual environment
 └── tests/
     ├── __init__.py
-    ├── conftest.py         # Shared fixtures: client, authed_client, anon_client, mock_s3, mock_supabase, etc.
+    ├── conftest.py         # Shared fixtures: client, authed_client, anon_client, mock_s3, mock_supabase, mock_rate_limiter (autouse)
     ├── test_auth.py        # get_current_user + require_auth dependency logic
     ├── test_documents.py   # GET /documents, DELETE /account
     ├── test_upload.py      # POST /upload — quota, S3 failure, anon/real user paths
     ├── test_process.py     # /process-document, /generate-cards, cache-status, cache-delete
     ├── test_ask.py         # POST /ask — 200/404/500, rate limit key selection, Gemini fallback
-    ├── test_rate_limit.py  # check_question_rate_limit: 20-request window, rolling expiry, retry_after
+    ├── test_rate_limit.py  # DBRateLimiter unit tests + 429 endpoint integration test
     ├── test_pdf_utils.py   # extract_text_from_pdf + extract_chunks_from_pdf (uses fitz fixture)
     ├── test_s3_utils.py    # upload/download/presign/delete S3 helpers (async)
     ├── test_db_utils.py    # All db_utils functions — Supabase chain mocking
@@ -45,17 +47,19 @@ backend/
 - **Upgrading**: `linkIdentity({ provider: 'google' })` or `updateUser({ email })` converts the anonymous session in-place — same `user_id`, documents are automatically preserved.
 - **Authenticated quota**: 4 documents (from `profiles.document_quota`). `documents_used` is incremented on upload (not incremented for anonymous uploads).
 - **JWT validation**: `get_current_user()` FastAPI dependency calls `supabase.auth.get_user(token)` and returns an `AuthUser(user_id, is_anonymous)` dataclass or `None`.
-- **Rate limiting**: `/ask` is limited to 20 questions/hour per `user_id` (anonymous or real). Auth is now required on `/ask` so the fallback to `document_id` is no longer needed.
+- **Rate limiting**: `/ask` is limited to 20 questions/hour per `user_id` (anonymous or real). DB-backed via `rate_limits` Supabase table — survives restarts and works across multiple ECS instances. Auth is required on `/ask`.
 - **Document ownership**: All document read/query endpoints verify the requesting user owns the document (`verify_document_owner`) and return 403 if not.
 - **Security headers**: HTTP middleware adds `X-Frame-Options`, `X-Content-Type-Options`, `Strict-Transport-Security`, `Referrer-Policy`, and `Content-Security-Policy` to every response.
 - **IP rate limiting**: `slowapi` middleware limits `/upload` to 20 req/min and `/ask` to 60 req/min per IP, as a second layer alongside the per-user question limit.
+- **Structured logging**: `logging_config.setup_logging()` called at startup — all modules use `logging.getLogger(__name__)`. Level controlled by `LOG_LEVEL` env var (default `INFO`).
+- **Sentry**: Initialised via `sentry_sdk.init()` with FastAPI+Starlette integrations. Set `SENTRY_DSN` and `ENVIRONMENT` env vars to activate.
 
 ---
 
 ## Files
 
 ### `main.py`
-Entry point. Defines all endpoints, auth dependencies, and the in-memory rate limiter.
+Entry point. Defines all endpoints, auth dependencies, DB-backed rate limiter, Sentry init, and structured logging setup.
 
 **Auth dependencies:**
 - `AuthUser` — dataclass with `user_id: str` and `is_anonymous: bool`
@@ -63,7 +67,13 @@ Entry point. Defines all endpoints, auth dependencies, and the in-memory rate li
 - `require_auth(auth)` — raises 401 if no valid session; returns `AuthUser`
 
 **Rate limiter:**
-- `check_question_rate_limit(key)` — rolling 1-hour window, 20 questions max. Returns `(allowed: bool, retry_after: int)`.
+- `db_rate_limiter` — `DBRateLimiter(limit=20, window_seconds=3600)` instance used by `/ask`. Backed by Supabase `rate_limits` table.
+
+### `logging_config.py`
+Configures the root logger with a `StreamHandler` to stdout. Format: `timestamp | LEVEL | module | message`. Level set by `LOG_LEVEL` env var (default `INFO`). Call `setup_logging()` once at app startup.
+
+### `rate_limiter.py`
+`DBRateLimiter` class — rolling window rate limiter backed by the Supabase `rate_limits` table. Fails open (allows request) if the DB is unreachable. Used by `/ask` at `limit=20, window_seconds=3600`. The `rate_limits` table has an index on `(user_id, endpoint, created_at)`.
 
 ---
 
@@ -241,6 +251,9 @@ AWS_REGION=
 AWS_S3_BUCKET=
 OPENAI_API_KEY=
 GEMINI_API_KEY=
+SENTRY_DSN=          # optional — Sentry error tracking (no-op if unset)
+ENVIRONMENT=         # optional — "development" | "production" (default: development)
+LOG_LEVEL=           # optional — DEBUG | INFO | WARNING | ERROR (default: INFO)
 ```
 
 ---
