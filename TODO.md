@@ -185,7 +185,7 @@ Zero friction entry. The user gets full value from their first document before e
 - [x] Add global request rate limiting middleware (slowapi) — `/upload` 20 req/min, `/ask` 60 req/min per IP
 - [x] Prompt injection prevention in `generate_answer` — grounded-only prompt with explicit rule against instruction override
 - [x] Access-denied UI overlay — typed `AuthError` (401/403) surfaces a clear overlay with sign-in or redirect CTA instead of a blank/broken page
-- [ ] Configure strict CORS policy — whitelist Vercel frontend domain only *(needs production domain — do after Vercel deploy)*
+- [x] Configure strict CORS policy — whitelist Vercel frontend domain only *(needs production domain — do after Vercel deploy)*
 - [ ] Rotate all API keys and move secrets to AWS Secrets Manager *(needs AWS infra — do after ECS deploy)*
 
 ### Reliability (code changes — before deployment)
@@ -199,7 +199,7 @@ Zero friction entry. The user gets full value from their first document before e
 - [x] Add `GET /health` endpoint — required by ECS/ALB for container health checks
 - [ ] Containerize backend using Docker
 - [ ] Deploy backend to AWS ECS (Fargate) via Terraform
-- [ ] Deploy frontend to Vercel (auto-deploy from GitHub main branch)
+- [x] Deploy frontend to Vercel (auto-deploy from GitHub main branch)
 - [ ] Configure environment variables in ECS task definition and Vercel project settings
 
 ### CI/CD

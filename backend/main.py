@@ -1,8 +1,8 @@
 import logging
 import os
-import sentry_sdk
-from sentry_sdk.integrations.fastapi import FastApiIntegration
-from sentry_sdk.integrations.starlette import StarletteIntegration
+import sentry_sdk  # pyright: ignore[reportMissingImports]
+from sentry_sdk.integrations.fastapi import FastApiIntegration  # pyright: ignore[reportMissingImports]
+from sentry_sdk.integrations.starlette import StarletteIntegration  # pyright: ignore[reportMissingImports]
 from fastapi import FastAPI, Request, UploadFile, File, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
@@ -22,9 +22,9 @@ from dotenv import load_dotenv
 from pdf_utils import extract_text_from_pdf, extract_chunks_from_pdf
 from embedding_utils import embed_texts
 from gemini_utils import generate_summary_and_quiz, generate_flashcards, generate_answer
-from slowapi import Limiter, _rate_limit_exceeded_handler
-from slowapi.util import get_remote_address
-from slowapi.errors import RateLimitExceeded
+from slowapi import Limiter, _rate_limit_exceeded_handler  # pyright: ignore[reportMissingImports]
+from slowapi.util import get_remote_address  # pyright: ignore[reportMissingImports]
+from slowapi.errors import RateLimitExceeded  # pyright: ignore[reportMissingImports]
 from logging_config import setup_logging
 from rate_limiter import DBRateLimiter
 import uuid
@@ -50,7 +50,11 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)  # ty
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=[
+        "https://luminasummarizer.com",
+        "https://www.luminasummarizer.com",
+        "http://localhost:3000",
+    ],
     allow_methods=["*"],
     allow_headers=["*"],
 )
