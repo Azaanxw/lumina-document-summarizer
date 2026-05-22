@@ -122,6 +122,10 @@ class AskRequest(BaseModel):
 # Endpoints
 # ---------------------------------------------------------------------------
 
+@app.get("/health")
+def health():
+    return {"status": "ok"}
+
 @app.delete("/account")
 def delete_account(auth: AuthUser = Depends(require_auth)):
     """Deletes the user's S3 files, then removes the auth user (cascades to DB rows)."""

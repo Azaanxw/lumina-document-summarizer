@@ -77,6 +77,8 @@ Configures the root logger with a `StreamHandler` to stdout. Format: `timestamp 
 
 ---
 
+**`GET /health`** — Returns `{"status": "ok"}`. Used by ECS/ALB container health checks — no auth required.
+
 **`GET /documents`** *(requires auth)*
 - Returns `{"documents": [{id, filename, created_at}, ...], "quota": {"used": int, "total": int}}`
 - Ordered by `created_at` descending.
@@ -182,11 +184,8 @@ Supabase (PostgreSQL + pgvector) interactions. Uses `SUPABASE_SERVICE_ROLE_KEY` 
 | Column | Type | Notes |
 |---|---|---|
 | `id` | uuid | PK, FK → auth.users |
-| `documents_used` | int | Incremented on each upload or claim |
+| `documents_used` | int | Incremented on each upload |
 | `document_quota` | int | Default 4 (free tier) |
-| `full_name` | text | From Supabase auth profile |
-| `upload_credits` | int | Legacy column (unused by backend) |
-| `tier` | text | Legacy column (unused by backend) |
 | `created_at` | timestamptz | Auto |
 
 **RPC functions:**

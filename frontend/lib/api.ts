@@ -109,7 +109,7 @@ function cached<T>(key: string, fetcher: () => Promise<T>): Promise<T> {
     const p = fetcher().catch((err) => { _cache.delete(key); throw err })
     _cache.set(key, p)
   }
-  return _cache.get(key)
+  return _cache.get(key)!
 }
 
 export async function processDocument(documentId: string): Promise<{ summary: string; quiz: QuizQuestion[] }> {

@@ -196,7 +196,7 @@ Zero friction entry. The user gets full value from their first document before e
 - [ ] Add Supabase Edge Function or cron webhook to delete S3 objects for expired anonymous documents *(can follow post-deploy)*
 
 ### Infrastructure & Deployment
-- [ ] Add `GET /health` endpoint — required by ECS/ALB for container health checks
+- [x] Add `GET /health` endpoint — required by ECS/ALB for container health checks
 - [ ] Containerize backend using Docker
 - [ ] Deploy backend to AWS ECS (Fargate) via Terraform
 - [ ] Deploy frontend to Vercel (auto-deploy from GitHub main branch)
