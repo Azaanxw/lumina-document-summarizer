@@ -12,6 +12,7 @@ venv/
 *.tfstate
 *.tfstate.*
 .terraform.lock.hcl
+*.tfvars
 
 # --- AI & Tools ---
 .agents/

@@ -198,9 +198,9 @@ Zero friction entry. The user gets full value from their first document before e
 ### Infrastructure & Deployment
 - [x] Add `GET /health` endpoint — required by ECS/ALB for container health checks
 - [x] Containerize backend using Docker
-- [ ] Deploy backend to AWS ECS (Fargate) via Terraform
+- [x] Deploy backend to AWS ECS (Fargate) via Terraform
 - [x] Deploy frontend to Vercel (auto-deploy from GitHub main branch)
-- [ ] Configure environment variables in ECS task definition and Vercel project settings
+- [x] Configure environment variables in ECS task definition and Vercel project settings
 
 ### CI/CD
 - [ ] Setup GitHub Actions pipeline — lint, run pytest + coverage, run Jest, build Docker image on PR
