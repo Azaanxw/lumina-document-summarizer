@@ -187,6 +187,7 @@ Zero friction entry. The user gets full value from their first document before e
 - [x] Access-denied UI overlay — typed `AuthError` (401/403) surfaces a clear overlay with sign-in or redirect CTA instead of a blank/broken page
 - [x] Configure strict CORS policy — whitelist Vercel frontend domain only *(needs production domain — do after Vercel deploy)*
 - [ ] Rotate all API keys and move secrets to AWS Secrets Manager *(needs AWS infra — do after ECS deploy)*
+- [ ] Create Privacy Policy and Terms of Service pages on luminasummarizer.com — required to publish Google OAuth app so any Google account can sign in (currently restricted to test users only)
 
 ### Reliability (code changes — before deployment)
 - [x] Add structured application logging (replace print statements with Python logging)
@@ -203,10 +204,10 @@ Zero friction entry. The user gets full value from their first document before e
 - [x] Configure environment variables in ECS task definition and Vercel project settings
 
 ### CI/CD
-- [ ] Setup GitHub Actions pipeline — lint, run pytest + coverage, run Jest, build Docker image on PR
+- [x] Setup GitHub Actions pipeline — lint, run pytest + coverage, run Jest, build Docker image on PR
 - [ ] Run Playwright E2E tests against preview/staging environment on PR
-- [ ] Auto-deploy to ECS on merge to main via GitHub Actions
-- [ ] Block merge if coverage drops below threshold
+- [x] Auto-deploy to ECS on merge to main via GitHub Actions
+- [x] Block merge if coverage drops below threshold
 
 ### Performance
 - [ ] Tune RAG retrieval — test match_threshold and match_count against real queries
