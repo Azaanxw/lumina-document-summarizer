@@ -17,6 +17,8 @@ backend/
 ├── db_utils.py         # Supabase client — all DB queries including auth/profile/claim
 ├── s3_utils.py         # AWS S3 upload and presigned URL helpers
 ├── requirements.txt    # Python dependencies
+├── Dockerfile          # Production container image (python:3.13-slim, uvicorn on port 8000)
+├── .dockerignore       # Excludes venv/, __pycache__/, .env, tests/ from image
 ├── pytest.ini          # pytest config (testpaths = tests, asyncio_mode = auto)
 ├── .env                # Environment variables (not committed)
 ├── uploads/            # Local temp directory (unused)
