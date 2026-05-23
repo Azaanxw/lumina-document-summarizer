@@ -186,7 +186,7 @@ Zero friction entry. The user gets full value from their first document before e
 - [x] Prompt injection prevention in `generate_answer` — grounded-only prompt with explicit rule against instruction override
 - [x] Access-denied UI overlay — typed `AuthError` (401/403) surfaces a clear overlay with sign-in or redirect CTA instead of a blank/broken page
 - [x] Configure strict CORS policy — whitelist Vercel frontend domain only *(needs production domain — do after Vercel deploy)*
-- [ ] Rotate all API keys and move secrets to AWS Secrets Manager *(needs AWS infra — do after ECS deploy)*
+- [x] Rotate all API keys and move secrets to AWS Secrets Manager — all sensitive env vars now fetched from `lumina/app-secrets` at container startup; no plaintext keys in ECS task definition
 - [x] Create Privacy Policy and Terms of Service pages on luminasummarizer.com — required to publish Google OAuth app so any Google account can sign in (currently restricted to test users only)
 
 ### Reliability (code changes — before deployment)
@@ -194,7 +194,7 @@ Zero friction entry. The user gets full value from their first document before e
 - [x] Add request timeout handling for Gemini and OpenAI calls
 - [x] Replace in-memory rate limiter with Redis or DB-backed store — current implementation breaks under multiple ECS instances since each container has isolated memory
 - [x] Integrate error tracking (Sentry) for both frontend and backend
-- [ ] Add Supabase Edge Function or cron webhook to delete S3 objects for expired anonymous documents *(can follow post-deploy)*
+- [x] Add APScheduler daily job to delete S3 objects for expired anonymous documents — runs at 3 AM UTC; deletes S3 files then `auth.admin.delete_user()` (cascades to DB)
 
 ### Infrastructure & Deployment
 - [x] Add `GET /health` endpoint — required by ECS/ALB for container health checks

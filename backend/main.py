@@ -1,14 +1,17 @@
 import logging
 import os
+import datetime
 import sentry_sdk  # pyright: ignore[reportMissingImports]
 from sentry_sdk.integrations.fastapi import FastApiIntegration  # pyright: ignore[reportMissingImports]
 from sentry_sdk.integrations.starlette import StarletteIntegration  # pyright: ignore[reportMissingImports]
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, UploadFile, File, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
 from dataclasses import dataclass
+from apscheduler.schedulers.asyncio import AsyncIOScheduler  # pyright: ignore[reportMissingImports]
 from s3_utils import upload_to_s3, create_presigned_url, create_signed_cloudfront_url, download_from_s3, delete_from_s3
 from db_utils import (
     get_supabase_client,
@@ -42,7 +45,50 @@ sentry_sdk.init(
 )
 
 logger = logging.getLogger(__name__)
-app = FastAPI()
+
+
+async def cleanup_anonymous_documents() -> None:
+    """Deletes S3 objects and auth users for anonymous sessions older than 30 days."""
+    logger.info("Cleanup: scanning for expired anonymous users")
+    cutoff = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=30)
+    deleted = 0
+    page = 1
+    try:
+        supabase = get_supabase_client()
+        while True:
+            users = supabase.auth.admin.list_users(page=page, per_page=100)
+            if not users:
+                break
+            for user in users:
+                if not getattr(user, "is_anonymous", False):
+                    continue
+                created = getattr(user, "created_at", None)
+                if created is None or created > cutoff:
+                    continue
+                filenames = get_user_document_filenames(str(user.id))
+                for filename in filenames:
+                    delete_from_s3(filename)
+                supabase.auth.admin.delete_user(str(user.id))
+                deleted += 1
+            if len(users) < 100:
+                break
+            page += 1
+        logger.info(f"Cleanup complete: removed {deleted} expired anonymous user(s)")
+    except Exception as e:
+        logger.error(f"Cleanup error: {e}")
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    scheduler = AsyncIOScheduler()
+    scheduler.add_job(cleanup_anonymous_documents, "cron", hour=3, minute=0)
+    scheduler.start()
+    logger.info("Scheduler started")
+    yield
+    scheduler.shutdown()
+
+
+app = FastAPI(lifespan=lifespan)
 
 limiter = Limiter(key_func=get_remote_address)
 app.state.limiter = limiter

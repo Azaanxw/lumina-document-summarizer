@@ -61,7 +61,11 @@ backend/
 ## Files
 
 ### `main.py`
-Entry point. Defines all endpoints, auth dependencies, DB-backed rate limiter, Sentry init, and structured logging setup.
+Entry point. Defines all endpoints, auth dependencies, DB-backed rate limiter, Sentry init, structured logging, and background scheduler.
+
+**Background scheduler (APScheduler `AsyncIOScheduler`):**
+- `cleanup_anonymous_documents()` — runs daily at 3 AM UTC. Paginates through all Supabase auth users; for each anonymous user created >30 days ago: deletes their S3 files then calls `auth.admin.delete_user()` (cascades to `documents` and `document_chunks` rows).
+- Scheduler is started/stopped via a FastAPI lifespan context manager (`@asynccontextmanager`).
 
 **Auth dependencies:**
 - `AuthUser` — dataclass with `user_id: str` and `is_anonymous: bool`
@@ -194,8 +198,9 @@ Supabase (PostgreSQL + pgvector) interactions. Uses `SUPABASE_SERVICE_ROLE_KEY` 
 - `match_documents(query_embedding, match_threshold, match_count, filter_document_id)` — cosine similarity search on `document_chunks` filtered by document.
 - `increment_documents_used(uid)` — atomically increments `profiles.documents_used` for a user.
 
-**pg_cron job:**
-- `cleanup-anonymous-documents` — runs daily at 3 AM; deletes `documents` whose `user_id` belongs to an anonymous Supabase auth user created more than 30 days ago.
+**Cleanup (two layers):**
+- **APScheduler job** (`main.py`) — runs daily at 3 AM UTC; deletes S3 objects then calls `auth.admin.delete_user()`, which cascades to `documents` + `document_chunks` rows. This is the primary cleanup path.
+- **pg_cron job** (Supabase) — legacy DB-only cleanup; kept as a safety net in case the ECS container is restarted before 3 AM.
 
 ---
 

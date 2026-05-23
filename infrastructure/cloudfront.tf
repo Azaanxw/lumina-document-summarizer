@@ -10,6 +10,10 @@ resource "aws_cloudfront_origin_access_control" "lumina" {
 resource "aws_cloudfront_public_key" "lumina" {
   name        = "lumina-signing-key"
   encoded_key = var.cloudfront_public_key
+
+  lifecycle {
+    ignore_changes = [encoded_key]
+  }
 }
 
 resource "aws_cloudfront_key_group" "lumina" {
