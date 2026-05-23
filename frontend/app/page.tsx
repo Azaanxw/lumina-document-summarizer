@@ -100,6 +100,11 @@ export default function Home() {
             subtitle="Sign in to access your documents and get 3 free document analyses."
           />
         )}
+
+        <footer className="mt-auto pt-4 text-center text-xs text-muted-foreground space-x-4">
+          <a href="/privacy" className="hover:text-foreground transition-colors">Privacy Policy</a>
+          <a href="/terms" className="hover:text-foreground transition-colors">Terms of Service</a>
+        </footer>
       </main>
     </>
   )

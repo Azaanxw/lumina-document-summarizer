@@ -92,7 +92,7 @@ export default function Dashboard() {
       <Suspense>
         <Notification />
       </Suspense>
-    <main className="min-h-svh px-6 py-10 max-w-5xl mx-auto w-full space-y-8">
+    <main className="min-h-svh px-6 py-10 max-w-5xl mx-auto w-full flex flex-col space-y-8">
       {/* Header row */}
       <div className="flex items-center justify-between gap-4">
         <div className="flex items-center gap-2.5">
@@ -144,6 +144,11 @@ export default function Dashboard() {
           ))}
         </div>
       )}
+
+      <footer className="mt-auto pt-4 text-center text-xs text-muted-foreground space-x-4">
+        <a href="/privacy" className="hover:text-foreground transition-colors">Privacy Policy</a>
+        <a href="/terms" className="hover:text-foreground transition-colors">Terms of Service</a>
+      </footer>
     </main>
     </>
   )
