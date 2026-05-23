@@ -38,7 +38,12 @@ export default function Home() {
 
   useEffect(() => {
     ensureAnonymousSession().then(() => {
-      supabase.auth.getSession().then(({ data }) => setSession(data.session))
+      supabase.auth.getSession().then(({ data }) => {
+        setSession(data.session)
+        if (data.session?.user && !data.session.user.is_anonymous) {
+          router.replace("/dashboard")
+        }
+      })
     })
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {

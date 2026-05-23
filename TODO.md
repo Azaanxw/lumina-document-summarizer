@@ -187,7 +187,7 @@ Zero friction entry. The user gets full value from their first document before e
 - [x] Access-denied UI overlay — typed `AuthError` (401/403) surfaces a clear overlay with sign-in or redirect CTA instead of a blank/broken page
 - [x] Configure strict CORS policy — whitelist Vercel frontend domain only *(needs production domain — do after Vercel deploy)*
 - [ ] Rotate all API keys and move secrets to AWS Secrets Manager *(needs AWS infra — do after ECS deploy)*
-- [ ] Create Privacy Policy and Terms of Service pages on luminasummarizer.com — required to publish Google OAuth app so any Google account can sign in (currently restricted to test users only)
+- [x] Create Privacy Policy and Terms of Service pages on luminasummarizer.com — required to publish Google OAuth app so any Google account can sign in (currently restricted to test users only)
 
 ### Reliability (code changes — before deployment)
 - [x] Add structured application logging (replace print statements with Python logging)
@@ -211,5 +211,5 @@ Zero friction entry. The user gets full value from their first document before e
 
 ### Performance
 - [ ] Tune RAG retrieval — test match_threshold and match_count against real queries
-- [ ] Add HNSW index to document_chunks.embedding for faster similarity search at scale
+- [x] Add HNSW index to document_chunks.embedding for faster similarity search at scale
 - [ ] Add CloudFront distribution in front of S3 — current `/pdf` proxy streams every PDF through the backend container; CloudFront serves PDFs directly and removes that load
