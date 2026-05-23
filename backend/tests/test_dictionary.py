@@ -1,4 +1,4 @@
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 
 def test_dictionary_endpoint_uses_timeout(client):
@@ -24,7 +24,7 @@ def test_dictionary_endpoint_uses_timeout(client):
             captured["timeout"] = _kwargs.get("timeout")
 
         async def __aenter__(self):
-            self.get = AsyncMock(return_value=mock_dict_resp)
+            self.get = MagicMock()
             return self
 
         async def __aexit__(self, *_args):
@@ -51,7 +51,7 @@ def test_dictionary_returns_404_for_unknown_word(client):
             pass
 
         async def __aenter__(self):
-            self.get = AsyncMock(return_value=mock_dict_resp)
+            self.get = MagicMock()
             return self
 
         async def __aexit__(self, *_args):

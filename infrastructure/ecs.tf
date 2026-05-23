@@ -81,18 +81,21 @@ resource "aws_ecs_task_definition" "lumina_backend" {
     }]
 
     environment = [
-      { name = "SUPABASE_URL",              value = var.supabase_url },
-      { name = "SUPABASE_SERVICE_ROLE_KEY", value = var.supabase_service_role_key },
-      { name = "AWS_S3_BUCKET",             value = aws_s3_bucket.lumina_storage.bucket },
-      { name = "AWS_REGION",                value = "eu-west-2" },
-      { name = "OPENAI_API_KEY",            value = var.openai_api_key },
-      { name = "GEMINI_API_KEY",            value = var.gemini_api_key },
-      { name = "SENTRY_DSN",                    value = var.sentry_dsn },
-      { name = "ENVIRONMENT",                   value = "production" },
-      { name = "LOG_LEVEL",                     value = "INFO" },
-      { name = "CLOUDFRONT_DOMAIN",             value = aws_cloudfront_distribution.lumina_pdfs.domain_name },
-      { name = "CLOUDFRONT_KEY_PAIR_ID",        value = aws_cloudfront_public_key.lumina.id },
-      { name = "CLOUDFRONT_PRIVATE_KEY_B64",    value = var.cloudfront_private_key_b64 },
+      { name = "AWS_S3_BUCKET",          value = aws_s3_bucket.lumina_storage.bucket },
+      { name = "AWS_REGION",             value = "eu-west-2" },
+      { name = "ENVIRONMENT",            value = "production" },
+      { name = "LOG_LEVEL",              value = "INFO" },
+      { name = "CLOUDFRONT_DOMAIN",      value = aws_cloudfront_distribution.lumina_pdfs.domain_name },
+      { name = "CLOUDFRONT_KEY_PAIR_ID", value = aws_cloudfront_public_key.lumina.id },
+    ]
+
+    secrets = [
+      { name = "SUPABASE_URL",               valueFrom = "${aws_secretsmanager_secret.lumina_app.arn}:SUPABASE_URL::" },
+      { name = "SUPABASE_SERVICE_ROLE_KEY",  valueFrom = "${aws_secretsmanager_secret.lumina_app.arn}:SUPABASE_SERVICE_ROLE_KEY::" },
+      { name = "OPENAI_API_KEY",             valueFrom = "${aws_secretsmanager_secret.lumina_app.arn}:OPENAI_API_KEY::" },
+      { name = "GEMINI_API_KEY",             valueFrom = "${aws_secretsmanager_secret.lumina_app.arn}:GEMINI_API_KEY::" },
+      { name = "SENTRY_DSN",                 valueFrom = "${aws_secretsmanager_secret.lumina_app.arn}:SENTRY_DSN::" },
+      { name = "CLOUDFRONT_PRIVATE_KEY_B64", valueFrom = "${aws_secretsmanager_secret.lumina_app.arn}:CLOUDFRONT_PRIVATE_KEY_B64::" },
     ]
 
     logConfiguration = {

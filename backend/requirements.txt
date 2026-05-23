@@ -12,6 +12,7 @@ google-genai
 slowapi
 sentry-sdk[fastapi]
 cryptography
+apscheduler
 
 # dev / testing
 pytest
