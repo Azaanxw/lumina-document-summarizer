@@ -32,3 +32,14 @@ variable "app_image_tag" {
   type        = string
   default     = "latest"
 }
+
+variable "cloudfront_public_key" {
+  description = "RSA-2048 public key in PEM format for signing CloudFront URLs"
+  type        = string
+}
+
+variable "cloudfront_private_key_b64" {
+  description = "Base64-encoded RSA-2048 private key for signing CloudFront URLs"
+  type        = string
+  sensitive   = true
+}

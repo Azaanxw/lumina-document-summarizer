@@ -1,7 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react"
-import { supabase } from "@/lib/supabase"
+import { getPdfUrl } from "@/lib/api"
 import { Document, Page, pdfjs } from "react-pdf"
 import "react-pdf/dist/Page/TextLayer.css"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -97,7 +97,7 @@ export function PdfViewer({ documentId, ref }: PdfViewerProps) {
   const [currentPage, setCurrentPage] = useState(1)
   const [highlight, setHighlight] = useState<{ page: number; texts: string[] } | null>(null)
   const [highlightedItems, setHighlightedItems] = useState<{ page: number; items: Set<number> } | null>(null)
-  const [authToken, setAuthToken] = useState<string | null>(null)
+  const [pdfUrl, setPdfUrl] = useState<string | null>(null)
 
   const containerRef = useRef<HTMLDivElement>(null)
   const pageRefs = useRef<Map<number, HTMLDivElement>>(new Map())
@@ -105,18 +105,17 @@ export function PdfViewer({ documentId, ref }: PdfViewerProps) {
   const highlightRef = useRef<{ page: number; texts: string[] } | null>(null)
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setAuthToken(session?.access_token ?? null)
-    })
+    let cancelled = false
+    getPdfUrl(documentId)
+      .then(({ url }) => { if (!cancelled) setPdfUrl(url) })
+      .catch(() => {})
+    return () => { cancelled = true }
   }, [documentId])
 
   const pdfFile = useMemo(() => {
-    if (!authToken) return null
-    return {
-      url: `${process.env.NEXT_PUBLIC_API_URL}/documents/${documentId}/pdf`,
-      httpHeaders: { Authorization: `Bearer ${authToken}` },
-    }
-  }, [documentId, authToken])
+    if (!pdfUrl) return null
+    return { url: pdfUrl }
+  }, [pdfUrl])
 
   // Keep ref in sync on every render (no dependency array — runs every render)
   useEffect(() => { highlightRef.current = highlight })

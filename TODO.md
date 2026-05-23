@@ -212,4 +212,4 @@ Zero friction entry. The user gets full value from their first document before e
 ### Performance
 - [ ] Tune RAG retrieval — test match_threshold and match_count against real queries
 - [x] Add HNSW index to document_chunks.embedding for faster similarity search at scale
-- [ ] Add CloudFront distribution in front of S3 — current `/pdf` proxy streams every PDF through the backend container; CloudFront serves PDFs directly and removes that load
+- [x] Add CloudFront distribution in front of S3 — PDFs now served via signed CloudFront URLs directly from edge; ECS container no longer proxies file bytes

@@ -41,7 +41,8 @@ export default function Home() {
       supabase.auth.getSession().then(({ data }) => {
         setSession(data.session)
         if (data.session?.user && !data.session.user.is_anonymous) {
-          router.replace("/dashboard")
+          const fromOAuth = window.location.hash.includes("access_token")
+          router.replace(fromOAuth ? "/dashboard?msg=signed_in" : "/dashboard")
         }
       })
     })

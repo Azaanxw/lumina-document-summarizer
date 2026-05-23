@@ -9,7 +9,7 @@ from fastapi.responses import Response
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
 from dataclasses import dataclass
-from s3_utils import upload_to_s3, create_presigned_url, download_from_s3, delete_from_s3
+from s3_utils import upload_to_s3, create_presigned_url, create_signed_cloudfront_url, download_from_s3, delete_from_s3
 from db_utils import (
     get_supabase_client,
     save_document_metadata, save_document_chunks, get_document_content,
@@ -324,7 +324,7 @@ def get_pdf_url(document_id: str, auth: AuthUser = Depends(require_auth)):
     filename = get_document_filename(document_id)
     if not filename:
         raise HTTPException(status_code=404, detail="Document not found")
-    url = create_presigned_url(filename)
+    url = create_signed_cloudfront_url(filename) or create_presigned_url(filename)
     if not url:
         raise HTTPException(status_code=500, detail="Failed to generate PDF URL")
     return {"url": url}
