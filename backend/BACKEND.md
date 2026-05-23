@@ -156,7 +156,7 @@ Supabase (PostgreSQL + pgvector) interactions. Uses `SUPABASE_SERVICE_ROLE_KEY` 
 | `save_document_cache(document_id, data)` | Updates AI cache columns. `data` is a partial dict. Returns `True`/`False`. |
 | `clear_summary_cache(document_id)` | Nulls `summary` and `quiz`. Returns `True`/`False`. |
 | `clear_flashcards_cache(document_id)` | Nulls `flashcards`. Returns `True`/`False`. |
-| `search_chunks(document_id, query_embedding, match_count, match_threshold)` | Calls `match_documents` RPC. Defaults: top 10 chunks, 0.3 threshold. |
+| `search_chunks(document_id, query_embedding, match_count, match_threshold)` | Calls `match_documents` RPC. Defaults: top 6 chunks, 0.3 threshold. |
 | `save_document_chunks(document_id, chunks)` | Batch-inserts into `document_chunks`. Each chunk needs `content`, `metadata`, `embedding`. |
 | `verify_document_owner(document_id, user_id)` | Returns `True` if the document exists and belongs to `user_id`. Used by all document-scoped endpoints to enforce ownership. |
 
@@ -182,7 +182,7 @@ Supabase (PostgreSQL + pgvector) interactions. Uses `SUPABASE_SERVICE_ROLE_KEY` 
 |---|---|---|
 | `id` | uuid | PK, auto-generated |
 | `document_id` | uuid | FK → documents.id |
-| `content` | text | Chunk text (≤800 chars) |
+| `content` | text | Chunk text (≤600 chars) |
 | `metadata` | jsonb | `{"page_number": N}` |
 | `embedding` | vector(1536) | OpenAI embedding |
 
@@ -210,7 +210,7 @@ PDF processing using **PyMuPDF** (`fitz`) and **LangChain text splitters**.
 | Function | Description |
 |---|---|
 | `extract_text_from_pdf(file_bytes)` | Concatenates all page text with double newlines. Returns `""` on error. |
-| `extract_chunks_from_pdf(file_bytes)` | Page-anchored chunking (800 chars, 100-char overlap per page). No cross-page chunks. Returns `[{content, metadata: {page_number}}]`. |
+| `extract_chunks_from_pdf(file_bytes)` | Page-anchored chunking (600 chars, 100-char overlap per page). No cross-page chunks. Returns `[{content, metadata: {page_number}}]`. |
 
 ---
 

@@ -18,7 +18,7 @@ export default defineConfig({
       timeout: 60_000,
     },
     {
-      command: 'cd ../backend && .venv\\Scripts\\uvicorn.exe main:app --port 8000',
+      command: 'cd ../backend && venv\\Scripts\\uvicorn.exe main:app --port 8000',
       url: 'http://localhost:8000/docs',
       reuseExistingServer: !process.env.CI,
       timeout: 60_000,
