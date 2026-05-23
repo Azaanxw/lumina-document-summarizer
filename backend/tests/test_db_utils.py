@@ -6,7 +6,7 @@ import db_utils
 @pytest.fixture
 def mock_sb():
     mock = MagicMock()
-    with patch("db_utils.create_client", return_value=mock):
+    with patch("db_utils.get_supabase_client", return_value=mock):
         yield mock
 
 
