@@ -21,7 +21,7 @@ def extract_text_from_pdf(file_bytes: bytes) -> str:
 
 def extract_chunks_from_pdf(file_bytes: bytes) -> list[dict]:
     """Extracts page-anchored chunks from a PDF. No chunk spans more than one page."""
-    splitter = RecursiveCharacterTextSplitter(chunk_size=800, chunk_overlap=100)
+    splitter = RecursiveCharacterTextSplitter(chunk_size=600, chunk_overlap=100)
     chunks = []
     try:
         pdf_document = fitz.open(stream=file_bytes, filetype="pdf")
