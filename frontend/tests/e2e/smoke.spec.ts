@@ -62,7 +62,8 @@ test('process-document: summary and quiz render after Gemini call', async ({ pag
 
   // Quiz heading and at least one question card appear below
   await expect(page.getByRole('heading', { name: 'Quiz' })).toBeVisible()
-  await expect(page.getByText(/1 \/ 10|1 \/ \d/)).toBeVisible()
+  const quizSection = page.locator('section').filter({ has: page.getByRole('heading', { name: 'Quiz' }) })
+  await expect(quizSection.getByText(/\d+ \/ \d+/)).toBeVisible()
 })
 
 // ─── Q&A pipeline ────────────────────────────────────────────────────────────
