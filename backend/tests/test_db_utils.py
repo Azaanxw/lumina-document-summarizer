@@ -56,7 +56,7 @@ def test_search_chunks_returns_list_on_success(mock_sb):
     mock_sb.rpc.assert_called_once_with("match_documents", {
         "query_embedding": [0.1] * 1536,
         "match_threshold": 0.3,
-        "match_count": 10,
+        "match_count": 6,
         "filter_document_id": "doc-1",
     })
 

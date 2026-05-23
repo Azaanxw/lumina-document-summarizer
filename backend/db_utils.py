@@ -56,7 +56,7 @@ def get_document_content(document_id: str) -> str | None:
         logger.error(f"Document Fetch Error: {e}")
         return None
 
-def search_chunks(document_id: str, query_embedding: list[float], match_count: int = 10, match_threshold: float = 0.3) -> list[dict]:
+def search_chunks(document_id: str, query_embedding: list[float], match_count: int = 6, match_threshold: float = 0.3) -> list[dict]:
     """Calls match_documents RPC to retrieve semantically similar chunks for a query."""
     supabase = get_supabase_client()
     try:

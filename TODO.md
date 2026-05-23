@@ -210,6 +210,6 @@ Zero friction entry. The user gets full value from their first document before e
 - [x] Block merge if coverage drops below threshold
 
 ### Performance
-- [ ] Tune RAG retrieval — test match_threshold and match_count against real queries
+- [x] Tune RAG retrieval — tested against real queries; threshold 0.3 confirmed correct, match_count reduced 10→6 (signal drops off after ~6 chunks)
 - [x] Add HNSW index to document_chunks.embedding for faster similarity search at scale
 - [x] Add CloudFront distribution in front of S3 — PDFs now served via signed CloudFront URLs directly from edge; ECS container no longer proxies file bytes
