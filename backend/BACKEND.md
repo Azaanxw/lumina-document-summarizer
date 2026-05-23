@@ -241,7 +241,7 @@ Gemini 3.1 Flash Lite. All functions enforce JSON output via `response_mime_type
 | `upload_to_s3(file_obj, filename)` | Streams to S3. Returns S3 key or `None`. |
 | `download_from_s3(filename)` | Returns raw bytes or `None`. |
 | `create_presigned_url(filename, expiration)` | 1-hour presigned S3 URL (fallback). |
-| `create_signed_cloudfront_url(filename, expiration_seconds)` | Signed CloudFront URL using `botocore.signers.CloudFrontSigner`. Requires `CLOUDFRONT_DOMAIN`, `CLOUDFRONT_KEY_PAIR_ID`, `CLOUDFRONT_PRIVATE_KEY_B64` env vars. Returns `None` if not configured. |
+| `create_signed_cloudfront_url(filename, expiration_seconds)` | Signed CloudFront URL using `botocore.signers.CloudFrontSigner`. Filename is `quote()`-encoded before signing so spaces become `%20` — required for signature verification to pass. Returns `None` if not configured. |
 | `delete_from_s3(filename)` | Deletes a single object from S3 by key. Returns `bool`. |
 
 ---
