@@ -2,7 +2,7 @@
 
 import { useRef, useState } from "react"
 import { Upload, Loader2, CheckCircle2, AlertCircle, LogIn } from "lucide-react"
-import { uploadDocument } from "@/lib/api"
+import { uploadDocument, AuthError } from "@/lib/api"
 import { friendlyError } from "@/lib/errors"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
@@ -33,10 +33,10 @@ export function UploadZone({ onSuccess }: UploadZoneProps) {
       setState("success")
       onSuccess(document_id)
     } catch (err) {
-      const msg = err instanceof Error ? err.message : ""
-      if (msg.includes("quota_exceeded")) {
+      if (err instanceof AuthError && err.status === 403) {
         setState("guest_limit")
       } else {
+        const msg = err instanceof Error ? err.message : ""
         setErrorMsg(friendlyError(msg, "Upload failed. Please try again."))
         setState("error")
       }

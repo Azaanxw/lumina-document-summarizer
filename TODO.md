@@ -205,7 +205,7 @@ Zero friction entry. The user gets full value from their first document before e
 
 ### CI/CD
 - [x] Setup GitHub Actions pipeline — lint, run pytest + coverage, run Jest, build Docker image on PR
-- [ ] Run Playwright E2E tests against preview/staging environment on PR
+- [x] Run Playwright E2E tests against preview/staging environment on PR — mocked E2E in CI (playwright.ci.config.ts); smoke tests run post-deploy in deploy.yml
 - [x] Auto-deploy to ECS on merge to main via GitHub Actions
 - [x] Block merge if coverage drops below threshold
 
