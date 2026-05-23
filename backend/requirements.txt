@@ -11,6 +11,7 @@ langchain-text-splitters
 google-genai
 slowapi
 sentry-sdk[fastapi]
+cryptography
 
 # dev / testing
 pytest

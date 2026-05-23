@@ -87,9 +87,12 @@ resource "aws_ecs_task_definition" "lumina_backend" {
       { name = "AWS_REGION",                value = "eu-west-2" },
       { name = "OPENAI_API_KEY",            value = var.openai_api_key },
       { name = "GEMINI_API_KEY",            value = var.gemini_api_key },
-      { name = "SENTRY_DSN",                value = var.sentry_dsn },
-      { name = "ENVIRONMENT",               value = "production" },
-      { name = "LOG_LEVEL",                 value = "INFO" },
+      { name = "SENTRY_DSN",                    value = var.sentry_dsn },
+      { name = "ENVIRONMENT",                   value = "production" },
+      { name = "LOG_LEVEL",                     value = "INFO" },
+      { name = "CLOUDFRONT_DOMAIN",             value = aws_cloudfront_distribution.lumina_pdfs.domain_name },
+      { name = "CLOUDFRONT_KEY_PAIR_ID",        value = aws_cloudfront_public_key.lumina.id },
+      { name = "CLOUDFRONT_PRIVATE_KEY_B64",    value = var.cloudfront_private_key_b64 },
     ]
 
     logConfiguration = {

@@ -128,9 +128,9 @@ Configures the root logger with a `StreamHandler` to stdout. Format: `timestamp 
 
 **`DELETE /documents/{document_id}/cache/flashcards`** *(requires auth — ownership verified)* — nulls `flashcards` column
 
-**`GET /documents/{document_id}/pdf`** *(requires auth — ownership verified)* — PDF proxy (downloads from S3 server-side, avoids CORS)
+**`GET /documents/{document_id}/pdf`** *(requires auth — ownership verified)* — PDF proxy fallback (streams from S3 through the backend; prefer `/pdf-url`)
 
-**`GET /documents/{document_id}/pdf-url`** *(requires auth — ownership verified)* — returns a 1-hour presigned S3 URL
+**`GET /documents/{document_id}/pdf-url`** *(requires auth — ownership verified)* — returns a signed CloudFront URL (falls back to 1-hour S3 presigned URL if CloudFront env vars are not set)
 
 **`GET /dictionary/{word}`** — Free Dictionary API proxy; returns `{word, phonetic, definition, example, synonyms}`
 
@@ -235,7 +235,8 @@ Gemini 3.1 Flash Lite. All functions enforce JSON output via `response_mime_type
 | `get_s3_client()` | Creates boto3 client from env vars. |
 | `upload_to_s3(file_obj, filename)` | Streams to S3. Returns S3 key or `None`. |
 | `download_from_s3(filename)` | Returns raw bytes or `None`. |
-| `create_presigned_url(filename, expiration)` | 1-hour signed URL. |
+| `create_presigned_url(filename, expiration)` | 1-hour presigned S3 URL (fallback). |
+| `create_signed_cloudfront_url(filename, expiration_seconds)` | Signed CloudFront URL using `botocore.signers.CloudFrontSigner`. Requires `CLOUDFRONT_DOMAIN`, `CLOUDFRONT_KEY_PAIR_ID`, `CLOUDFRONT_PRIVATE_KEY_B64` env vars. Returns `None` if not configured. |
 | `delete_from_s3(filename)` | Deletes a single object from S3 by key. Returns `bool`. |
 
 ---
@@ -252,9 +253,12 @@ AWS_REGION=
 AWS_S3_BUCKET=
 OPENAI_API_KEY=
 GEMINI_API_KEY=
-SENTRY_DSN=          # optional — Sentry error tracking (no-op if unset)
-ENVIRONMENT=         # optional — "development" | "production" (default: development)
-LOG_LEVEL=           # optional — DEBUG | INFO | WARNING | ERROR (default: INFO)
+SENTRY_DSN=                  # optional — Sentry error tracking (no-op if unset)
+ENVIRONMENT=                 # optional — "development" | "production" (default: development)
+LOG_LEVEL=                   # optional — DEBUG | INFO | WARNING | ERROR (default: INFO)
+CLOUDFRONT_DOMAIN=           # CloudFront distribution domain (e.g. xxxx.cloudfront.net)
+CLOUDFRONT_KEY_PAIR_ID=      # CloudFront public key ID (from Terraform output)
+CLOUDFRONT_PRIVATE_KEY_B64=  # Base64-encoded RSA-2048 private key for signing CloudFront URLs
 ```
 
 ---

@@ -13,6 +13,8 @@ venv/
 *.tfstate.*
 .terraform.lock.hcl
 *.tfvars
+infrastructure/cf_private.pem
+infrastructure/cf_public.pem
 
 # --- AI & Tools ---
 .agents/
