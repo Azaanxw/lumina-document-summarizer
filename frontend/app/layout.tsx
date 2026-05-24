@@ -14,7 +14,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Lumina",
+  title: "Lumina | PDF Summarizer",
   description: "AI-powered PDF study tools",
   icons: {
     icon: "/icon.png",

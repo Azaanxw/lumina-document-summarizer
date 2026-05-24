@@ -64,7 +64,8 @@ export default function DocumentPage() {
 
   async function handleDeleteAccount() {
     await deleteAccount()
-    await supabase.auth.signOut({ scope: 'local' })
+    // User was deleted server-side; calling signOut would 403. Clear local session directly.
+    await (supabase.auth as any)._removeSession()
     router.replace("/?msg=account_deleted")
   }
 
