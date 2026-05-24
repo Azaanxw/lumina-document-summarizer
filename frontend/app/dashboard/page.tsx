@@ -81,7 +81,7 @@ export default function Dashboard() {
 
   async function handleDeleteAccount() {
     await deleteAccount()
-    await supabase.auth.signOut()
+    await supabase.auth.signOut({ scope: 'local' })
     router.replace("/?msg=account_deleted")
   }
 
