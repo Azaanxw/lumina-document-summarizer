@@ -64,6 +64,11 @@ test('process-document: summary and quiz render after Gemini call', async ({ pag
   await expect(page.getByRole('heading', { name: 'Quiz' })).toBeVisible()
   const quizSection = page.locator('section').filter({ has: page.getByRole('heading', { name: 'Quiz' }) })
   await expect(quizSection.getByText(/\d+ \/ \d+/)).toBeVisible()
+
+  // PDF viewer must render without errors — catches broken signed URLs (403),
+  // CORS misconfigurations, and S3 permission issues that the AI pipeline hides.
+  await expect(page.getByText(/Failed to load PDF|Error loading/i)).not.toBeVisible()
+  await expect(page.locator('.react-pdf__Page canvas').first()).toBeVisible({ timeout: 15_000 })
 })
 
 // ─── Q&A pipeline ────────────────────────────────────────────────────────────

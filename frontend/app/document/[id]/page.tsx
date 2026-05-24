@@ -14,7 +14,7 @@ import { getCacheStatus, generateCards, deleteAccount, type Flashcard, AuthError
 import { supabase } from "@/lib/supabase"
 import { Button } from "@/components/ui/button"
 import { UserMenu } from "@/components/user-menu"
-import Image from "next/image"
+import { LuminaBrand } from "@/components/lumina-brand"
 import { ChevronLeft, GripHorizontal, Layers, Loader2, Lock, LogIn, User } from "lucide-react"
 import { AuthModal } from "@/components/auth-modal"
 import { toast } from "sonner"
@@ -132,11 +132,8 @@ export default function DocumentPage() {
           Dashboard
         </Button>
 
-        <div className="flex-1 flex items-center justify-center gap-2">
-          <Image src="/icon.png" alt="Lumina" width={36} height={36} className="rounded-lg shrink-0" />
-          <span className="font-bold text-base">Lumina</span>
-          <span className="text-muted-foreground/40 select-none">|</span>
-          <span className="text-sm text-muted-foreground">PDF summarizer</span>
+        <div className="flex-1 flex items-center justify-center">
+          <LuminaBrand iconSize={36} textClassName="font-bold text-base" isAuthenticated={!isAnonymous} />
         </div>
 
         <div className="shrink-0">

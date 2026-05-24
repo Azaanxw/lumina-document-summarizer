@@ -2,15 +2,17 @@
 
 import { useEffect, useState, Suspense } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
-import Image from "next/image"
 import { toast } from "sonner"
 import { listDocuments, deleteAccount, type DocumentMeta, type Quota } from "@/lib/api"
 import { supabase } from "@/lib/supabase"
 import { friendlyError } from "@/lib/errors"
+import { LuminaBrand } from "@/components/lumina-brand"
+import { SiteFooter } from "@/components/site-footer"
 import { DocumentCard } from "@/components/document-card"
 import { UploadZone } from "@/components/upload-zone"
 import { UserMenu } from "@/components/user-menu"
 import { Skeleton } from "@/components/ui/skeleton"
+import { FileText } from "lucide-react"
 
 const MESSAGES: Record<string, { text: string; type: "success" | "error" | "default" }> = {
   signed_in:       { text: "Signed in successfully!", type: "success" },
@@ -92,15 +94,10 @@ export default function Dashboard() {
       <Suspense>
         <Notification />
       </Suspense>
-    <main className="min-h-svh px-6 py-10 max-w-5xl mx-auto w-full flex flex-col space-y-8">
+    <main className="min-h-svh px-6 pt-10 pb-3 max-w-5xl mx-auto w-full flex flex-col space-y-8 select-none">
       {/* Header row */}
       <div className="flex items-center justify-between gap-4">
-        <div className="flex items-center gap-2.5">
-          <Image src="/icon.png" alt="Lumina" width={44} height={44} className="rounded-xl shrink-0" />
-          <h1 className="text-2xl font-bold tracking-tight">Lumina</h1>
-          <span className="text-muted-foreground/40 select-none">|</span>
-          <span className="text-base text-muted-foreground">PDF summarizer</span>
-        </div>
+        <LuminaBrand iconSize={52} textClassName="text-3xl font-bold tracking-tight" isAuthenticated={true} />
         {userEmail && (
           <UserMenu
             userEmail={userEmail}
@@ -137,6 +134,14 @@ export default function Dashboard() {
 
       {error && <p className="text-sm text-muted-foreground text-center py-4">{error}</p>}
 
+      {!loading && !error && docs.length === 0 && (
+        <div className="rounded-2xl border border-dashed bg-muted/20 px-6 py-12 flex flex-col items-center gap-3 text-center">
+          <FileText className="w-10 h-10 text-muted-foreground/40" />
+          <p className="font-medium text-foreground">No documents yet</p>
+          <p className="text-sm text-muted-foreground">Upload a PDF above to get started.</p>
+        </div>
+      )}
+
       {!loading && docs.length > 0 && (
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {docs.map((doc) => (
@@ -145,10 +150,7 @@ export default function Dashboard() {
         </div>
       )}
 
-      <footer className="mt-auto pt-4 text-center text-xs text-muted-foreground space-x-4">
-        <a href="/privacy" className="hover:text-foreground transition-colors">Privacy Policy</a>
-        <a href="/terms" className="hover:text-foreground transition-colors">Terms of Service</a>
-      </footer>
+      <SiteFooter />
     </main>
     </>
   )
