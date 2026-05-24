@@ -51,7 +51,7 @@ export function UserMenu({ userEmail, onSignOut, onDeleteAccount }: UserMenuProp
         </button>
 
         {open && (
-          <div className="absolute right-0 top-10 z-40 w-56 rounded-xl border bg-card shadow-lg py-1 text-sm">
+          <div className="absolute right-0 top-10 z-40 w-56 rounded-xl border bg-card shadow-lg py-1 text-sm select-none">
             <div className="px-3 py-2 text-xs text-muted-foreground truncate border-b">{userEmail}</div>
             <button
               onClick={() => { setOpen(false); onSignOut() }}

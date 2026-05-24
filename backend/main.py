@@ -9,7 +9,7 @@ from fastapi import FastAPI, Request, UploadFile, File, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from dataclasses import dataclass
 from apscheduler.schedulers.asyncio import AsyncIOScheduler  # pyright: ignore[reportMissingImports]
 from s3_utils import upload_to_s3, create_presigned_url, create_signed_cloudfront_url, download_from_s3, delete_from_s3
@@ -166,7 +166,7 @@ class DocumentRequest(BaseModel):
 
 class AskRequest(BaseModel):
     document_id: str
-    question: str
+    question: str = Field(min_length=1, max_length=500)
 
 # ---------------------------------------------------------------------------
 # Endpoints
