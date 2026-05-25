@@ -18,7 +18,7 @@ const BASE_URL = "https://luminasummarizer.com";
 
 export const metadata: Metadata = {
   title: {
-    default: "Lumina — AI PDF Summarizer",
+    default: "Lumina | AI PDF Summarizer",
     template: "%s | Lumina",
   },
   description:
@@ -28,18 +28,18 @@ export const metadata: Metadata = {
     canonical: "/",
   },
   openGraph: {
-    title: "Lumina — AI PDF Summarizer",
+    title: "Lumina | AI PDF Summarizer",
     description:
       "Upload a PDF and get an AI-generated summary, Q&A with cited answers, quizzes, and flashcards in seconds.",
     url: BASE_URL,
     siteName: "Lumina",
-    images: [{ url: "/og-image.png", width: 1200, height: 630, alt: "Lumina — AI PDF Summarizer" }],
+    images: [{ url: "/og-image.png", width: 1200, height: 630, alt: "Lumina | AI PDF Summarizer" }],
     type: "website",
     locale: "en_US",
   },
   twitter: {
     card: "summary_large_image",
-    title: "Lumina — AI PDF Summarizer",
+    title: "Lumina | AI PDF Summarizer",
     description:
       "Upload a PDF and get an AI-generated summary, Q&A with cited answers, quizzes, and flashcards in seconds.",
     images: ["/og-image.png"],
