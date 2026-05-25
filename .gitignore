@@ -27,3 +27,4 @@ infrastructure/cf_public.pem
 skills-lock.json
 backend/__pycache__/main.cpython-313.pyc
 backend/.claude/settings.local.json
+LUMINA_TECHNICAL_REPORT.md
