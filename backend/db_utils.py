@@ -141,6 +141,8 @@ def clear_flashcards_cache(document_id: str) -> bool:
         logger.error(f"Clear Flashcards Cache Error: {e}")
         return False
 
+CHUNK_INSERT_BATCH_SIZE = 50
+
 def save_document_chunks(document_id: str, chunks: list[dict]) -> bool:
     """Batch-inserts page-anchored chunks with embeddings into document_chunks."""
     supabase = get_supabase_client()
@@ -154,7 +156,8 @@ def save_document_chunks(document_id: str, chunks: list[dict]) -> bool:
         for chunk in chunks
     ]
     try:
-        supabase.table("document_chunks").insert(rows).execute()
+        for i in range(0, len(rows), CHUNK_INSERT_BATCH_SIZE):
+            supabase.table("document_chunks").insert(rows[i:i + CHUNK_INSERT_BATCH_SIZE]).execute()
         return True
     except Exception as e:
         logger.error(f"Chunk Insert Error: {e}")

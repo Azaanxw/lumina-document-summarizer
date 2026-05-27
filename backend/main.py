@@ -22,7 +22,7 @@ from db_utils import (
     verify_document_owner,
 )
 from dotenv import load_dotenv
-from pdf_utils import extract_text_from_pdf, extract_chunks_from_pdf
+from pdf_utils import extract_text_from_pdf, extract_chunks_from_pdf, get_page_count
 from embedding_utils import embed_texts
 from gemini_utils import generate_summary_and_quiz, generate_flashcards, generate_answer
 from slowapi import Limiter, _rate_limit_exceeded_handler  # pyright: ignore[reportMissingImports]
@@ -155,6 +155,7 @@ def require_auth(auth: AuthUser | None = Depends(get_current_user)) -> AuthUser:
 # ---------------------------------------------------------------------------
 
 MAX_FILE_SIZE = 5 * 1024 * 1024  # 5 MB
+MAX_PAGES = 100
 db_rate_limiter = DBRateLimiter(limit=10, window_seconds=3600)
 
 # ---------------------------------------------------------------------------
@@ -238,6 +239,9 @@ async def upload_pdf(
 
     if file_bytes[:5] != b"%PDF-":
         raise HTTPException(status_code=400, detail="Invalid PDF file.")
+
+    if get_page_count(file_bytes) > MAX_PAGES:
+        raise HTTPException(status_code=400, detail=f"PDF too long. Maximum {MAX_PAGES} pages allowed.")
 
     extracted_text = extract_text_from_pdf(file_bytes)
     if not extracted_text:

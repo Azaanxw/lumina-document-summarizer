@@ -4,6 +4,7 @@ resource "aws_lb" "lumina" {
   load_balancer_type = "application"
   security_groups    = [aws_security_group.alb.id]
   subnets            = [aws_subnet.public_a.id, aws_subnet.public_b.id]
+  idle_timeout       = 300
   tags               = { Project = "Lumina" }
 }
 
