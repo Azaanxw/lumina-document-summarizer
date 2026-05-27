@@ -17,17 +17,27 @@ const MESSAGES: Record<string, { text: string; type: "success" | "error" | "defa
   account_deleted: { text: "Your account and all documents have been deleted.", type: "error" },
 }
 
+const OAUTH_ERRORS: Record<string, string> = {
+  identity_already_exists: "This Google account is already linked to another account. Sign in instead of upgrading.",
+}
+
 function Notification() {
   const searchParams = useSearchParams()
   const msg = searchParams.get("msg")
+  const errorCode = searchParams.get("error_code")
 
   useEffect(() => {
+    if (errorCode) {
+      window.history.replaceState(null, "", "/")
+      toast.error(OAUTH_ERRORS[errorCode] ?? "Authentication failed. Please try again.", { id: errorCode })
+      return
+    }
     if (!msg || !MESSAGES[msg]) return
     const { text, type } = MESSAGES[msg]
     window.history.replaceState(null, "", "/")
     if (type === "error") toast.error(text, { id: msg })
     else toast(text, { id: msg })
-  }, [msg])
+  }, [msg, errorCode])
 
   return null
 }

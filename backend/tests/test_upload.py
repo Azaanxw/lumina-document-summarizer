@@ -135,6 +135,66 @@ def test_upload_rejects_oversized_file(authed_client):
     assert "5MB" in response.json()["detail"]
 
 
+def test_upload_returns_403_when_ip_at_quota(anon_client):
+    with patch("main.get_user_documents", return_value=[]), \
+         patch("main.get_ip_documents_used", return_value=3), \
+         patch("main.get_remote_address", return_value="1.2.3.4"):
+        response = _upload(anon_client)
+    assert response.status_code == 403
+    assert response.json()["detail"] == "quota_exceeded"
+
+
+def test_upload_allows_anon_when_ip_under_quota(anon_client):
+    db_record = [{"id": "new-doc-id"}]
+    with patch("main.get_user_documents", return_value=[]), \
+         patch("main.get_ip_documents_used", return_value=2), \
+         patch("main.get_remote_address", return_value="1.2.3.4"), \
+         patch("main.extract_text_from_pdf", return_value="text"), \
+         patch("main.extract_chunks_from_pdf", return_value=[]), \
+         patch("main.embed_texts", return_value=[]), \
+         patch("main.upload_to_s3", new_callable=AsyncMock, return_value="file.pdf"), \
+         patch("main.save_document_metadata", return_value=db_record), \
+         patch("main.increment_ip_documents_used", return_value=True), \
+         patch("main.save_document_chunks", return_value=True):
+        response = _upload(anon_client)
+    assert response.status_code == 200
+
+
+def test_upload_increments_ip_quota_for_anonymous(anon_client):
+    db_record = [{"id": "new-doc-id"}]
+    mock_ip_increment = MagicMock(return_value=True)
+    with patch("main.get_user_documents", return_value=[]), \
+         patch("main.get_ip_documents_used", return_value=0), \
+         patch("main.get_remote_address", return_value="1.2.3.4"), \
+         patch("main.extract_text_from_pdf", return_value="text"), \
+         patch("main.extract_chunks_from_pdf", return_value=[]), \
+         patch("main.embed_texts", return_value=[]), \
+         patch("main.upload_to_s3", new_callable=AsyncMock, return_value="file.pdf"), \
+         patch("main.save_document_metadata", return_value=db_record), \
+         patch("main.increment_ip_documents_used", mock_ip_increment), \
+         patch("main.save_document_chunks", return_value=True):
+        _upload(anon_client)
+    mock_ip_increment.assert_called_once_with("1.2.3.4")
+
+
+def test_upload_does_not_check_ip_quota_for_real_user(authed_client):
+    db_record = [{"id": "new-doc-id"}]
+    mock_ip_check = MagicMock(return_value=0)
+    with patch("main.get_user_documents", return_value=[]), \
+         patch("main.get_profile", return_value={"document_quota": 4}), \
+         patch("main.get_ip_documents_used", mock_ip_check), \
+         patch("main.extract_text_from_pdf", return_value="text"), \
+         patch("main.extract_chunks_from_pdf", return_value=[]), \
+         patch("main.embed_texts", return_value=[]), \
+         patch("main.upload_to_s3", new_callable=AsyncMock, return_value="file.pdf"), \
+         patch("main.save_document_metadata", return_value=db_record), \
+         patch("main.increment_documents_used", return_value=True), \
+         patch("main.save_document_chunks", return_value=True):
+        response = _upload(authed_client)
+    assert response.status_code == 200
+    mock_ip_check.assert_not_called()
+
+
 def test_upload_rejects_invalid_magic_bytes(authed_client):
     with patch("main.get_user_documents", return_value=[]), \
          patch("main.get_profile", return_value={"document_quota": 4}):

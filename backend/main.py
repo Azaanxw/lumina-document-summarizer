@@ -19,7 +19,7 @@ from db_utils import (
     search_chunks, get_user_documents, get_document_filename, get_document_cache,
     save_document_cache, clear_summary_cache, clear_flashcards_cache,
     get_profile, increment_documents_used, get_user_document_filenames,
-    verify_document_owner,
+    verify_document_owner, get_ip_documents_used, increment_ip_documents_used,
 )
 from dotenv import load_dotenv
 from pdf_utils import extract_text_from_pdf, extract_chunks_from_pdf, get_page_count
@@ -156,6 +156,7 @@ def require_auth(auth: AuthUser | None = Depends(get_current_user)) -> AuthUser:
 
 MAX_FILE_SIZE = 5 * 1024 * 1024  # 5 MB
 MAX_PAGES = 100
+IP_ANONYMOUS_QUOTA = 3
 db_rate_limiter = DBRateLimiter(limit=10, window_seconds=3600)
 
 # ---------------------------------------------------------------------------
@@ -200,7 +201,7 @@ def list_documents(auth: AuthUser = Depends(require_auth)):
     }
 
 @app.post("/upload")
-@limiter.limit("20/minute")
+@limiter.limit("5/minute")
 async def upload_pdf(
     request: Request,
     file: UploadFile = File(...),
@@ -226,6 +227,9 @@ async def upload_pdf(
     doc_count = len(get_user_documents(auth.user_id))
     if auth.is_anonymous:
         if doc_count >= 1:
+            raise HTTPException(status_code=403, detail="quota_exceeded")
+        ip_address = get_remote_address(request)
+        if get_ip_documents_used(ip_address) >= IP_ANONYMOUS_QUOTA:
             raise HTTPException(status_code=403, detail="quota_exceeded")
     else:
         profile = get_profile(auth.user_id)
@@ -265,7 +269,9 @@ async def upload_pdf(
     if not db_record:
         raise HTTPException(status_code=500, detail="Failed to save to database")
 
-    if not auth.is_anonymous:
+    if auth.is_anonymous:
+        increment_ip_documents_used(get_remote_address(request))
+    else:
         increment_documents_used(auth.user_id)
 
     document_id: str = str(db_record[0]["id"])  # type: ignore

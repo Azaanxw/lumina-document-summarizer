@@ -26,6 +26,32 @@ def save_document_metadata(user_id: str, filename: str, content: str):
         logger.error(f"Database Insert Error: {e}")
         return None
 
+def get_ip_documents_used(ip_address: str) -> int:
+    """Returns the number of anonymous documents uploaded from this IP address."""
+    supabase = get_supabase_client()
+    try:
+        response = (
+            supabase.table("ip_quotas")
+            .select("documents_used")
+            .eq("ip_address", ip_address)
+            .maybe_single()
+            .execute()
+        )
+        return response.data["documents_used"] if response.data else 0
+    except Exception as e:
+        logger.error(f"IP Quota Fetch Error: {e}")
+        return 0  # fail open
+
+def increment_ip_documents_used(ip_address: str) -> bool:
+    """Atomically upserts and increments the document count for an IP address."""
+    supabase = get_supabase_client()
+    try:
+        supabase.rpc("increment_ip_documents_used", {"p_ip": ip_address}).execute()
+        return True
+    except Exception as e:
+        logger.error(f"IP Quota Increment Error: {e}")
+        return False
+
 def get_profile(user_id: str) -> dict | None:
     """Returns the user's quota profile (documents_used, document_quota)."""
     supabase = get_supabase_client()
