@@ -91,9 +91,10 @@ Configures the root logger with a `StreamHandler` to stdout. Format: `timestamp 
 
 **`POST /upload`** *(requires auth — anonymous or real; 20 req/min IP limit)*
 1. 401 if no session at all.
-2. Quota check: anonymous → 1 doc max; real user → `profile.document_quota` (default 4).
-3. Validates file size ≤ 20 MB and magic bytes start with `%PDF-`.
-4. Extract full text + page-anchored chunks from PDF.
+2. Early 413 if `Content-Length` header exceeds 5 MB — rejects before reading the body.
+3. Quota check: anonymous → 1 doc max; real user → `profile.document_quota` (default 4).
+4. Validates file size ≤ 5 MB (post-read guard) and magic bytes start with `%PDF-`.
+5. Extract full text + page-anchored chunks from PDF.
 5. Batch embed all chunks (OpenAI).
 6. Upload PDF to S3 with UUID-prefixed key.
 7. `save_document_metadata(user_id, ...)` — `user_id` always set (from anonymous or real session).

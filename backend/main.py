@@ -154,7 +154,7 @@ def require_auth(auth: AuthUser | None = Depends(get_current_user)) -> AuthUser:
 # Rate limiting (/ask — 20 questions per hour, rolling window, DB-backed)
 # ---------------------------------------------------------------------------
 
-MAX_FILE_SIZE = 20 * 1024 * 1024  # 20 MB
+MAX_FILE_SIZE = 5 * 1024 * 1024  # 5 MB
 db_rate_limiter = DBRateLimiter(limit=10, window_seconds=3600)
 
 # ---------------------------------------------------------------------------
@@ -214,6 +214,14 @@ async def upload_pdf(
     if not file.filename:
         raise HTTPException(status_code=400, detail="Filename is required")
 
+    content_length = request.headers.get("content-length")
+    if content_length:
+        try:
+            if int(content_length) > MAX_FILE_SIZE:
+                raise HTTPException(status_code=413, detail="File too large. Maximum size is 5MB.")
+        except ValueError:
+            pass
+
     doc_count = len(get_user_documents(auth.user_id))
     if auth.is_anonymous:
         if doc_count >= 1:
@@ -226,7 +234,7 @@ async def upload_pdf(
     file_bytes = await file.read()
 
     if len(file_bytes) > MAX_FILE_SIZE:
-        raise HTTPException(status_code=400, detail="File too large. Maximum size is 20MB.")
+        raise HTTPException(status_code=413, detail="File too large. Maximum size is 5MB.")
 
     if file_bytes[:5] != b"%PDF-":
         raise HTTPException(status_code=400, detail="Invalid PDF file.")
