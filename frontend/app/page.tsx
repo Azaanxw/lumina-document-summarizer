@@ -18,17 +18,16 @@ const MESSAGES: Record<string, { text: string; type: "success" | "error" | "defa
 }
 
 function Notification() {
-  const router = useRouter()
   const searchParams = useSearchParams()
   const msg = searchParams.get("msg")
 
   useEffect(() => {
     if (!msg || !MESSAGES[msg]) return
     const { text, type } = MESSAGES[msg]
-    router.replace("/", { scroll: false })
+    window.history.replaceState(null, "", "/")
     if (type === "error") toast.error(text, { id: msg })
     else toast(text, { id: msg })
-  }, [msg, router])
+  }, [msg])
 
   return null
 }

@@ -27,6 +27,12 @@ export function UploadZone({ onSuccess }: UploadZoneProps) {
       return
     }
 
+    if (file.size > 5 * 1024 * 1024) {
+      setErrorMsg("File is too large. Please try a PDF under 5MB.")
+      setState("error")
+      return
+    }
+
     setState("uploading")
     try {
       const { document_id } = await uploadDocument(file)
