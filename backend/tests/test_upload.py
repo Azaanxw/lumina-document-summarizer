@@ -87,12 +87,15 @@ def test_upload_does_not_increment_documents_used_for_anonymous(anon_client):
     mock_increment = MagicMock(return_value=True)
 
     with patch("main.get_user_documents", return_value=[]), \
+         patch("main.get_ip_documents_used", return_value=0), \
+         patch("main.get_remote_address", return_value="1.2.3.4"), \
          patch("main.extract_text_from_pdf", return_value="text"), \
          patch("main.extract_chunks_from_pdf", return_value=[]), \
          patch("main.embed_texts", return_value=[]), \
          patch("main.upload_to_s3", new_callable=AsyncMock, return_value="file.pdf"), \
          patch("main.save_document_metadata", return_value=db_record), \
          patch("main.increment_documents_used", mock_increment), \
+         patch("main.increment_ip_documents_used", return_value=True), \
          patch("main.save_document_chunks", return_value=True):
         _upload(anon_client)
 
