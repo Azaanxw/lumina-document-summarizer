@@ -89,13 +89,14 @@ Configures the root logger with a `StreamHandler` to stdout. Format: `timestamp 
 - Returns `{"documents": [{id, filename, created_at}, ...], "quota": {"used": int, "total": int}}`
 - Ordered by `created_at` descending.
 
-**`POST /upload`** *(requires auth — anonymous or real; 20 req/min IP limit)*
+**`POST /upload`** *(requires auth — anonymous or real; 5 req/min IP limit)*
 1. 401 if no session at all.
 2. Early 413 if `Content-Length` header exceeds 5 MB — rejects before reading the body.
-3. Quota check: anonymous → 1 doc max; real user → `profile.document_quota` (default 4).
-4. Validates file size ≤ 5 MB (post-read guard) and magic bytes start with `%PDF-`.
-5. Rejects PDFs over 100 pages (`MAX_PAGES`) to prevent Supabase statement timeouts on large chunk inserts.
-6. Extract full text + page-anchored chunks from PDF.
+3. Quota check: anonymous → 1 doc max per session; real user → `profile.document_quota` (default 4).
+4. IP quota check (anonymous only): rejects if IP has already uploaded `IP_ANONYMOUS_QUOTA` (3) docs — prevents cookie-clearing abuse.
+5. Validates file size ≤ 5 MB (post-read guard) and magic bytes start with `%PDF-`.
+6. Rejects PDFs over 100 pages (`MAX_PAGES`) to prevent Supabase statement timeouts on large chunk inserts.
+7. Extract full text + page-anchored chunks from PDF.
 5. Batch embed all chunks (OpenAI).
 6. Upload PDF to S3 with UUID-prefixed key.
 7. `save_document_metadata(user_id, ...)` — `user_id` always set (from anonymous or real session).
@@ -151,6 +152,8 @@ Supabase (PostgreSQL + pgvector) interactions. Uses `SUPABASE_SERVICE_ROLE_KEY` 
 | `save_document_metadata(user_id, filename, content)` | Inserts into `documents`. `user_id` is always required (anonymous or real). Returns inserted row list or `None`. |
 | `get_profile(user_id)` | Returns `{documents_used, document_quota}` from `profiles` table. Returns `None` on error. |
 | `increment_documents_used(user_id)` | Calls `increment_documents_used(uid)` RPC — atomic increment of `profiles.documents_used`. |
+| `get_ip_documents_used(ip_address)` | Returns `documents_used` from `ip_quotas` for the given IP. Returns 0 (fail-open) if DB unreachable. |
+| `increment_ip_documents_used(ip_address)` | Calls `increment_ip_documents_used(p_ip)` RPC — atomic upsert-increment of `ip_quotas.documents_used`. |
 | `get_user_documents(user_id)` | Returns `[{id, filename, created_at}]` for a user, newest first. |
 | `get_user_document_filenames(user_id)` | Returns `list[str]` of S3 filenames for all documents owned by the user — used by `DELETE /account` before DB deletion. |
 | `get_document_content(document_id)` | Fetches the `content` field by UUID. Returns `str` or `None`. |
@@ -199,6 +202,15 @@ Supabase (PostgreSQL + pgvector) interactions. Uses `SUPABASE_SERVICE_ROLE_KEY` 
 **RPC functions:**
 - `match_documents(query_embedding, match_threshold, match_count, filter_document_id)` — cosine similarity search on `document_chunks` filtered by document.
 - `increment_documents_used(uid)` — atomically increments `profiles.documents_used` for a user.
+- `increment_ip_documents_used(p_ip)` — atomically upserts and increments `ip_quotas.documents_used` for an IP address.
+
+`ip_quotas`
+| Column | Type | Notes |
+|---|---|---|
+| `ip_address` | text | PK |
+| `documents_used` | int | Cumulative anonymous uploads from this IP |
+| `created_at` | timestamptz | Auto |
+| `updated_at` | timestamptz | Updated on every increment |
 
 **Cleanup (two layers):**
 - **APScheduler job** (`main.py`) — runs daily at 3 AM UTC; deletes S3 objects then calls `auth.admin.delete_user()`, which cascades to `documents` + `document_chunks` rows. This is the primary cleanup path.
