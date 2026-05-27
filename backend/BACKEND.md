@@ -94,7 +94,8 @@ Configures the root logger with a `StreamHandler` to stdout. Format: `timestamp 
 2. Early 413 if `Content-Length` header exceeds 5 MB — rejects before reading the body.
 3. Quota check: anonymous → 1 doc max; real user → `profile.document_quota` (default 4).
 4. Validates file size ≤ 5 MB (post-read guard) and magic bytes start with `%PDF-`.
-5. Extract full text + page-anchored chunks from PDF.
+5. Rejects PDFs over 100 pages (`MAX_PAGES`) to prevent Supabase statement timeouts on large chunk inserts.
+6. Extract full text + page-anchored chunks from PDF.
 5. Batch embed all chunks (OpenAI).
 6. Upload PDF to S3 with UUID-prefixed key.
 7. `save_document_metadata(user_id, ...)` — `user_id` always set (from anonymous or real session).
@@ -158,7 +159,7 @@ Supabase (PostgreSQL + pgvector) interactions. Uses `SUPABASE_SERVICE_ROLE_KEY` 
 | `clear_summary_cache(document_id)` | Nulls `summary` and `quiz`. Returns `True`/`False`. |
 | `clear_flashcards_cache(document_id)` | Nulls `flashcards`. Returns `True`/`False`. |
 | `search_chunks(document_id, query_embedding, match_count, match_threshold)` | Calls `match_documents` RPC. Defaults: top 6 chunks, 0.3 threshold. |
-| `save_document_chunks(document_id, chunks)` | Batch-inserts into `document_chunks`. Each chunk needs `content`, `metadata`, `embedding`. |
+| `save_document_chunks(document_id, chunks)` | Inserts into `document_chunks` in batches of 50 (`CHUNK_INSERT_BATCH_SIZE`) to avoid Supabase statement timeouts on large PDFs. Each chunk needs `content`, `metadata`, `embedding`. |
 | `verify_document_owner(document_id, user_id)` | Returns `True` if the document exists and belongs to `user_id`. Used by all document-scoped endpoints to enforce ownership. |
 
 **Supabase tables:**
