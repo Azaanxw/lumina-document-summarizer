@@ -22,22 +22,23 @@ const OAUTH_ERRORS: Record<string, string> = {
 }
 
 function Notification() {
+  const router = useRouter()
   const searchParams = useSearchParams()
   const msg = searchParams.get("msg")
   const errorCode = searchParams.get("error_code")
 
   useEffect(() => {
     if (errorCode) {
-      window.history.replaceState(null, "", "/")
+      router.replace("/", { scroll: false })
       toast.error(OAUTH_ERRORS[errorCode] ?? "Authentication failed. Please try again.", { id: errorCode })
       return
     }
     if (!msg || !MESSAGES[msg]) return
     const { text, type } = MESSAGES[msg]
-    window.history.replaceState(null, "", "/")
+    router.replace("/", { scroll: false })
     if (type === "error") toast.error(text, { id: msg })
     else toast(text, { id: msg })
-  }, [msg, errorCode])
+  }, [msg, errorCode, router])
 
   return null
 }
