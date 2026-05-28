@@ -75,6 +75,19 @@ jobs:
         working-directory: frontend
         run: npx playwright install chromium --with-deps
 
+      - name: Clear CI runner IP from ip_quotas
+        run: |
+          SECRET=$(aws secretsmanager get-secret-value \
+            --secret-id arn:aws:secretsmanager:eu-west-2:179598271525:secret:lumina/app-secrets-gU1u8K \
+            --query SecretString --output text)
+          SUPABASE_URL=$(echo "$SECRET" | jq -r '.SUPABASE_URL')
+          SUPABASE_KEY=$(echo "$SECRET" | jq -r '.SUPABASE_SERVICE_ROLE_KEY')
+          RUNNER_IP=$(curl -sf https://api.ipify.org)
+          curl -sf -X DELETE \
+            "${SUPABASE_URL}/rest/v1/ip_quotas?ip_address=eq.${RUNNER_IP}" \
+            -H "apikey: ${SUPABASE_KEY}" \
+            -H "Authorization: Bearer ${SUPABASE_KEY}"
+
       - name: Run smoke tests against production
         working-directory: frontend
         run: npx playwright test --config playwright.smoke.config.ts
