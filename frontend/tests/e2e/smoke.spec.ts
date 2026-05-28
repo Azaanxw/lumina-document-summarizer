@@ -9,6 +9,28 @@ import path from 'path'
 
 const SAMPLE_PDF = path.join(__dirname, 'fixtures/sample.pdf')
 
+// Reset the runner IP's quota before each test so accumulated uploads from prior
+// tests (or prior CI runs) don't block subsequent uploads. SMOKE_SUPABASE_URL and
+// SMOKE_SUPABASE_SERVICE_KEY are injected by the deploy workflow; in local dev
+// these are unset and this hook is a no-op.
+test.beforeEach(async () => {
+  const supabaseUrl = process.env.SMOKE_SUPABASE_URL
+  const serviceKey = process.env.SMOKE_SUPABASE_SERVICE_KEY
+  if (!supabaseUrl || !serviceKey) return
+  try {
+    const runnerIp = await fetch('https://api.ipify.org').then(r => r.text())
+    await fetch(`${supabaseUrl}/rest/v1/ip_quotas?ip_address=eq.${runnerIp}`, {
+      method: 'DELETE',
+      headers: {
+        apikey: serviceKey,
+        Authorization: `Bearer ${serviceKey}`,
+      },
+    })
+  } catch {
+    // fail open — quota cleanup is best-effort; test may still pass
+  }
+})
+
 // Shared helper — lands on home, waits for anonymous session, uploads PDF,
 // then waits for the redirect to /document/:id.
 async function uploadAndGetDocumentPage(page: import('@playwright/test').Page) {
