@@ -10,16 +10,29 @@ import path from 'path'
 const SAMPLE_PDF = path.join(__dirname, 'fixtures/sample.pdf')
 
 // Reset the runner IP's quota before each test so accumulated uploads from prior
-// tests (or prior CI runs) don't block subsequent uploads. SMOKE_SUPABASE_URL and
-// SMOKE_SUPABASE_SERVICE_KEY are injected by the deploy workflow; in local dev
-// these are unset and this hook is a no-op.
+// tests (or prior CI runs) don't block subsequent uploads.
+// SMOKE_SUPABASE_URL, SMOKE_SUPABASE_SERVICE_KEY, and SMOKE_API_URL are injected
+// by the deploy workflow; in local dev these are unset and this hook is a no-op.
+//
+// We ask the backend for our IP via GET /client-ip instead of a third-party
+// service so we get the exact address the backend stores in ip_quotas (which
+// may differ from a public IP-echo service when requests pass through an ALB).
 test.beforeEach(async () => {
   const supabaseUrl = process.env.SMOKE_SUPABASE_URL
   const serviceKey = process.env.SMOKE_SUPABASE_SERVICE_KEY
+  const apiUrl = process.env.SMOKE_API_URL
   if (!supabaseUrl || !serviceKey) return
   try {
-    const runnerIp = await fetch('https://api.ipify.org').then(r => r.text())
-    await fetch(`${supabaseUrl}/rest/v1/ip_quotas?ip_address=eq.${runnerIp}`, {
+    let runnerIp: string
+    if (apiUrl) {
+      const res = await fetch(`${apiUrl}/client-ip`)
+      const json = await res.json() as { ip: string }
+      runnerIp = json.ip.trim()
+    } else {
+      // Fallback: explicit IPv4-only echo so format matches what the backend records
+      runnerIp = (await fetch('https://api4.ipify.org').then(r => r.text())).trim()
+    }
+    await fetch(`${supabaseUrl}/rest/v1/ip_quotas?ip_address=eq.${encodeURIComponent(runnerIp)}`, {
       method: 'DELETE',
       headers: {
         apikey: serviceKey,

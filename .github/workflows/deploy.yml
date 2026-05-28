@@ -75,13 +75,25 @@ jobs:
         working-directory: frontend
         run: npx playwright install chromium --with-deps
 
-      - name: Export Supabase credentials for smoke tests
+      - name: Export credentials and backend URL for smoke tests
         run: |
           SECRET=$(aws secretsmanager get-secret-value \
             --secret-id arn:aws:secretsmanager:eu-west-2:179598271525:secret:lumina/app-secrets-gU1u8K \
             --query SecretString --output text)
           echo "SMOKE_SUPABASE_URL=$(echo "$SECRET" | jq -r '.SUPABASE_URL')" >> "$GITHUB_ENV"
           echo "SMOKE_SUPABASE_SERVICE_KEY=$(echo "$SECRET" | jq -r '.SUPABASE_SERVICE_ROLE_KEY')" >> "$GITHUB_ENV"
+          # Derive the backend API URL from the ALB attached to the ECS service.
+          # /client-ip on this URL returns the exact IP the backend records in ip_quotas.
+          TARGET_GROUP_ARN=$(aws ecs describe-services \
+            --cluster lumina-cluster --services lumina-backend \
+            --query "services[0].loadBalancers[0].targetGroupArn" --output text)
+          LB_ARN=$(aws elbv2 describe-target-groups \
+            --target-group-arns "$TARGET_GROUP_ARN" \
+            --query "TargetGroups[0].LoadBalancerArns[0]" --output text)
+          LB_DNS=$(aws elbv2 describe-load-balancers \
+            --load-balancer-arns "$LB_ARN" \
+            --query "LoadBalancers[0].DNSName" --output text)
+          echo "SMOKE_API_URL=https://$LB_DNS" >> "$GITHUB_ENV"
 
       - name: Run smoke tests against production
         working-directory: frontend
