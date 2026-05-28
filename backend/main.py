@@ -156,7 +156,8 @@ def require_auth(auth: AuthUser | None = Depends(get_current_user)) -> AuthUser:
 
 MAX_FILE_SIZE = 5 * 1024 * 1024  # 5 MB
 MAX_PAGES = 100
-IP_ANONYMOUS_QUOTA = 3
+IP_ANONYMOUS_QUOTA = 1
+IP_REGISTERED_QUOTA = 4
 db_rate_limiter = DBRateLimiter(limit=10, window_seconds=3600)
 
 # ---------------------------------------------------------------------------
@@ -229,15 +230,17 @@ async def upload_pdf(
             pass
 
     doc_count = len(get_user_documents(auth.user_id))
+    ip_address = get_remote_address(request)
     if auth.is_anonymous:
         if doc_count >= 1:
             raise HTTPException(status_code=403, detail="quota_exceeded")
-        ip_address = get_remote_address(request)
         if get_ip_documents_used(ip_address) >= IP_ANONYMOUS_QUOTA:
             raise HTTPException(status_code=403, detail="quota_exceeded")
     else:
         profile = get_profile(auth.user_id)
         if profile and doc_count >= profile["document_quota"]:
+            raise HTTPException(status_code=403, detail="quota_exceeded")
+        if get_ip_documents_used(ip_address) >= IP_REGISTERED_QUOTA:
             raise HTTPException(status_code=403, detail="quota_exceeded")
 
     file_bytes = await file.read()
@@ -273,9 +276,8 @@ async def upload_pdf(
     if not db_record:
         raise HTTPException(status_code=500, detail="Failed to save to database")
 
-    if auth.is_anonymous:
-        increment_ip_documents_used(get_remote_address(request))
-    else:
+    increment_ip_documents_used(ip_address)
+    if not auth.is_anonymous:
         increment_documents_used(auth.user_id)
 
     document_id: str = str(db_record[0]["id"])  # type: ignore

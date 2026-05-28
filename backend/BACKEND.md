@@ -95,14 +95,14 @@ Configures the root logger with a `StreamHandler` to stdout. Format: `timestamp 
 1. 401 if no session at all.
 2. Early 413 if `Content-Length` header exceeds 5 MB — rejects before reading the body.
 3. Quota check: anonymous → 1 doc max per session; real user → `profile.document_quota` (default 4).
-4. IP quota check (anonymous only): rejects if IP has already uploaded `IP_ANONYMOUS_QUOTA` (3) docs — prevents cookie-clearing abuse.
+4. IP quota check: anonymous users capped at `IP_ANONYMOUS_QUOTA` (1); registered users capped at `IP_REGISTERED_QUOTA` (4). Tracked via `ip_quotas` table for all users — prevents delete-and-recreate account abuse.
 5. Validates file size ≤ 5 MB (post-read guard) and magic bytes start with `%PDF-`.
 6. Rejects PDFs over 100 pages (`MAX_PAGES`) to prevent Supabase statement timeouts on large chunk inserts.
 7. Extract full text + page-anchored chunks from PDF.
 5. Batch embed all chunks (OpenAI).
 6. Upload PDF to S3 with UUID-prefixed key.
 7. `save_document_metadata(user_id, ...)` — `user_id` always set (from anonymous or real session).
-8. If not anonymous: `increment_documents_used()`.
+8. `increment_ip_documents_used()` called for all users. If not anonymous: also `increment_documents_used()`.
 9. `save_document_chunks()` — batch insert chunks + embeddings.
 10. Returns `{"message", "filename", "chunks_stored", "text_preview", "database_record"}`.
 
@@ -210,7 +210,7 @@ Supabase (PostgreSQL + pgvector) interactions. Uses `SUPABASE_SERVICE_ROLE_KEY` 
 | Column | Type | Notes |
 |---|---|---|
 | `ip_address` | text | PK |
-| `documents_used` | int | Cumulative anonymous uploads from this IP |
+| `documents_used` | int | Cumulative uploads from this IP (anonymous and registered users) |
 | `created_at` | timestamptz | Auto |
 | `updated_at` | timestamptz | Updated on every increment |
 
