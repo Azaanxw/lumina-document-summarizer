@@ -85,6 +85,8 @@ Configures the root logger with a `StreamHandler` to stdout. Format: `timestamp 
 
 **`GET /health`** — Returns `{"status": "ok"}`. Used by ECS/ALB container health checks — no auth required.
 
+**`GET /client-ip`** — Returns `{"ip": "<client_ip>"}` as seen by the backend after ALB/proxy headers. No auth required. Used by smoke tests to get the exact IP stored in `ip_quotas` for cleanup.
+
 **`GET /documents`** *(requires auth)*
 - Returns `{"documents": [{id, filename, created_at}, ...], "quota": {"used": int, "total": int}}`
 - Ordered by `created_at` descending.
