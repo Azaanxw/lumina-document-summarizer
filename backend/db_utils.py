@@ -37,7 +37,7 @@ def get_ip_documents_used(ip_address: str) -> int:
             .maybe_single()
             .execute()
         )
-        return response.data["documents_used"] if response.data else 0
+        return response.data["documents_used"] if response and response.data else 0
     except Exception as e:
         logger.error(f"IP Quota Fetch Error: {e}")
         return 0  # fail open
