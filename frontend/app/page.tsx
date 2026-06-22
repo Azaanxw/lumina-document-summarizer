@@ -50,7 +50,6 @@ export default function Home() {
   const navigated = useRef(false)
 
   useEffect(() => {
-    // Capture at effect-start so it reads the real landing URL before any client-side navigation
     const isOAuthCallback = window.location.hash.includes("access_token")
       || window.location.search.includes("code=")
 
@@ -59,9 +58,8 @@ export default function Home() {
         if (navigated.current) return
         setSession(data.session)
         if (data.session?.user && !data.session.user.is_anonymous) {
-          const fromOAuth = window.location.hash.includes("access_token")
-            || window.location.search.includes("code=")
-          if (fromOAuth) router.replace("/dashboard?msg=signed_in")
+          navigated.current = true
+          if (isOAuthCallback) router.replace("/dashboard?msg=signed_in")
         }
       })
     })
