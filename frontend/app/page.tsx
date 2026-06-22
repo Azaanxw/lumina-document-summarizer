@@ -59,8 +59,9 @@ export default function Home() {
         if (navigated.current) return
         setSession(data.session)
         if (data.session?.user && !data.session.user.is_anonymous) {
-          navigated.current = true
-          router.replace(isOAuthCallback ? "/dashboard?msg=signed_in" : "/dashboard")
+          const fromOAuth = window.location.hash.includes("access_token")
+            || window.location.search.includes("code=")
+          if (fromOAuth) router.replace("/dashboard?msg=signed_in")
         }
       })
     })
