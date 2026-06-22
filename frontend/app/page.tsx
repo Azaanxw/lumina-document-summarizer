@@ -42,7 +42,8 @@ export default function Home() {
         setSession(data.session)
         if (data.session?.user && !data.session.user.is_anonymous) {
           const fromOAuth = window.location.hash.includes("access_token")
-          router.replace(fromOAuth ? "/dashboard?msg=signed_in" : "/dashboard")
+            || window.location.search.includes("code=")
+          if (fromOAuth) router.replace("/dashboard?msg=signed_in")
         }
       })
     })
