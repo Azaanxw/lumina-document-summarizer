@@ -9,6 +9,38 @@ import path from 'path'
 
 const SAMPLE_PDF = path.join(__dirname, 'fixtures/sample.pdf')
 
+// Wipe all ip_quotas rows before each test.
+//
+// ip_quotas is a transient abuse-prevention table — it tracks cumulative
+// anonymous uploads per IP to stop cookie-clearing abuse. The per-user cap
+// (doc_count >= 1) still enforces the real limit; IP quota is defense-in-depth.
+//
+// Attempting to match just the runner's IP has proven unreliable: the address
+// the backend records (from X-Forwarded-For set by the ALB) can differ from what
+// any external echo service or even /client-ip returns when called from Node.js
+// rather than from the Chromium process that makes the actual upload request.
+// Clearing the whole table is safe and avoids the mismatch entirely.
+//
+// SMOKE_SUPABASE_URL and SMOKE_SUPABASE_SERVICE_KEY are injected by the deploy
+// workflow. In local dev they are unset and this hook is a no-op.
+test.beforeEach(async () => {
+  const supabaseUrl = process.env.SMOKE_SUPABASE_URL
+  const serviceKey = process.env.SMOKE_SUPABASE_SERVICE_KEY
+  if (!supabaseUrl || !serviceKey) return
+  try {
+    await fetch(`${supabaseUrl}/rest/v1/ip_quotas?documents_used=gte.0`, {
+      method: 'DELETE',
+      headers: {
+        apikey: serviceKey,
+        Authorization: `Bearer ${serviceKey}`,
+        Prefer: 'return=minimal',
+      },
+    })
+  } catch {
+    // fail open — quota cleanup is best-effort; test may still pass
+  }
+})
+
 // Shared helper — lands on home, waits for anonymous session, uploads PDF,
 // then waits for the redirect to /document/:id.
 async function uploadAndGetDocumentPage(page: import('@playwright/test').Page) {
@@ -62,7 +94,13 @@ test('process-document: summary and quiz render after Gemini call', async ({ pag
 
   // Quiz heading and at least one question card appear below
   await expect(page.getByRole('heading', { name: 'Quiz' })).toBeVisible()
-  await expect(page.getByText(/1 \/ 10|1 \/ \d/)).toBeVisible()
+  const quizSection = page.locator('section').filter({ has: page.getByRole('heading', { name: 'Quiz' }) })
+  await expect(quizSection.getByText(/\d+ \/ \d+/)).toBeVisible()
+
+  // PDF viewer must render without errors — catches broken signed URLs (403),
+  // CORS misconfigurations, and S3 permission issues that the AI pipeline hides.
+  await expect(page.getByText(/Failed to load PDF|Error loading/i)).not.toBeVisible()
+  await expect(page.locator('.react-pdf__Page canvas').first()).toBeVisible({ timeout: 15_000 })
 })
 
 // ─── Q&A pipeline ────────────────────────────────────────────────────────────

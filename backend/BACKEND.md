@@ -85,19 +85,24 @@ Configures the root logger with a `StreamHandler` to stdout. Format: `timestamp 
 
 **`GET /health`** — Returns `{"status": "ok"}`. Used by ECS/ALB container health checks — no auth required.
 
+**`GET /client-ip`** — Returns `{"ip": "<client_ip>"}` as seen by the backend after ALB/proxy headers. No auth required. Used by smoke tests to get the exact IP stored in `ip_quotas` for cleanup.
+
 **`GET /documents`** *(requires auth)*
 - Returns `{"documents": [{id, filename, created_at}, ...], "quota": {"used": int, "total": int}}`
 - Ordered by `created_at` descending.
 
-**`POST /upload`** *(requires auth — anonymous or real; 20 req/min IP limit)*
+**`POST /upload`** *(requires auth — anonymous or real; 5 req/min IP limit)*
 1. 401 if no session at all.
-2. Quota check: anonymous → 1 doc max; real user → `profile.document_quota` (default 4).
-3. Validates file size ≤ 20 MB and magic bytes start with `%PDF-`.
-4. Extract full text + page-anchored chunks from PDF.
+2. Early 413 if `Content-Length` header exceeds 5 MB — rejects before reading the body.
+3. Quota check: anonymous → 1 doc max per session; real user → `profile.document_quota` (default 4).
+4. IP quota check: anonymous users capped at `IP_ANONYMOUS_QUOTA` (1); registered users capped at `IP_REGISTERED_QUOTA` (4). Tracked via `ip_quotas` table for all users — prevents delete-and-recreate account abuse.
+5. Validates file size ≤ 5 MB (post-read guard) and magic bytes start with `%PDF-`.
+6. Rejects PDFs over 100 pages (`MAX_PAGES`) to prevent Supabase statement timeouts on large chunk inserts.
+7. Extract full text + page-anchored chunks from PDF.
 5. Batch embed all chunks (OpenAI).
 6. Upload PDF to S3 with UUID-prefixed key.
 7. `save_document_metadata(user_id, ...)` — `user_id` always set (from anonymous or real session).
-8. If not anonymous: `increment_documents_used()`.
+8. `increment_ip_documents_used()` called for all users. If not anonymous: also `increment_documents_used()`.
 9. `save_document_chunks()` — batch insert chunks + embeddings.
 10. Returns `{"message", "filename", "chunks_stored", "text_preview", "database_record"}`.
 
@@ -149,6 +154,8 @@ Supabase (PostgreSQL + pgvector) interactions. Uses `SUPABASE_SERVICE_ROLE_KEY` 
 | `save_document_metadata(user_id, filename, content)` | Inserts into `documents`. `user_id` is always required (anonymous or real). Returns inserted row list or `None`. |
 | `get_profile(user_id)` | Returns `{documents_used, document_quota}` from `profiles` table. Returns `None` on error. |
 | `increment_documents_used(user_id)` | Calls `increment_documents_used(uid)` RPC — atomic increment of `profiles.documents_used`. |
+| `get_ip_documents_used(ip_address)` | Returns `documents_used` from `ip_quotas` for the given IP. Returns 0 (fail-open) if DB unreachable. |
+| `increment_ip_documents_used(ip_address)` | Calls `increment_ip_documents_used(p_ip)` RPC — atomic upsert-increment of `ip_quotas.documents_used`. |
 | `get_user_documents(user_id)` | Returns `[{id, filename, created_at}]` for a user, newest first. |
 | `get_user_document_filenames(user_id)` | Returns `list[str]` of S3 filenames for all documents owned by the user — used by `DELETE /account` before DB deletion. |
 | `get_document_content(document_id)` | Fetches the `content` field by UUID. Returns `str` or `None`. |
@@ -157,7 +164,7 @@ Supabase (PostgreSQL + pgvector) interactions. Uses `SUPABASE_SERVICE_ROLE_KEY` 
 | `clear_summary_cache(document_id)` | Nulls `summary` and `quiz`. Returns `True`/`False`. |
 | `clear_flashcards_cache(document_id)` | Nulls `flashcards`. Returns `True`/`False`. |
 | `search_chunks(document_id, query_embedding, match_count, match_threshold)` | Calls `match_documents` RPC. Defaults: top 6 chunks, 0.3 threshold. |
-| `save_document_chunks(document_id, chunks)` | Batch-inserts into `document_chunks`. Each chunk needs `content`, `metadata`, `embedding`. |
+| `save_document_chunks(document_id, chunks)` | Inserts into `document_chunks` in batches of 50 (`CHUNK_INSERT_BATCH_SIZE`) to avoid Supabase statement timeouts on large PDFs. Each chunk needs `content`, `metadata`, `embedding`. |
 | `verify_document_owner(document_id, user_id)` | Returns `True` if the document exists and belongs to `user_id`. Used by all document-scoped endpoints to enforce ownership. |
 
 **Supabase tables:**
@@ -197,6 +204,15 @@ Supabase (PostgreSQL + pgvector) interactions. Uses `SUPABASE_SERVICE_ROLE_KEY` 
 **RPC functions:**
 - `match_documents(query_embedding, match_threshold, match_count, filter_document_id)` — cosine similarity search on `document_chunks` filtered by document.
 - `increment_documents_used(uid)` — atomically increments `profiles.documents_used` for a user.
+- `increment_ip_documents_used(p_ip)` — atomically upserts and increments `ip_quotas.documents_used` for an IP address.
+
+`ip_quotas`
+| Column | Type | Notes |
+|---|---|---|
+| `ip_address` | text | PK |
+| `documents_used` | int | Cumulative uploads from this IP (anonymous and registered users) |
+| `created_at` | timestamptz | Auto |
+| `updated_at` | timestamptz | Updated on every increment |
 
 **Cleanup (two layers):**
 - **APScheduler job** (`main.py`) — runs daily at 3 AM UTC; deletes S3 objects then calls `auth.admin.delete_user()`, which cascades to `documents` + `document_chunks` rows. This is the primary cleanup path.
@@ -241,7 +257,7 @@ Gemini 3.1 Flash Lite. All functions enforce JSON output via `response_mime_type
 | `upload_to_s3(file_obj, filename)` | Streams to S3. Returns S3 key or `None`. |
 | `download_from_s3(filename)` | Returns raw bytes or `None`. |
 | `create_presigned_url(filename, expiration)` | 1-hour presigned S3 URL (fallback). |
-| `create_signed_cloudfront_url(filename, expiration_seconds)` | Signed CloudFront URL using `botocore.signers.CloudFrontSigner`. Requires `CLOUDFRONT_DOMAIN`, `CLOUDFRONT_KEY_PAIR_ID`, `CLOUDFRONT_PRIVATE_KEY_B64` env vars. Returns `None` if not configured. |
+| `create_signed_cloudfront_url(filename, expiration_seconds)` | Signed CloudFront URL using `botocore.signers.CloudFrontSigner`. Filename is `quote()`-encoded before signing so spaces become `%20` — required for signature verification to pass. Returns `None` if not configured. |
 | `delete_from_s3(filename)` | Deletes a single object from S3 by key. Returns `bool`. |
 
 ---

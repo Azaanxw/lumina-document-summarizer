@@ -19,7 +19,10 @@
       "Bash(findstr \"version\" \"C:\\\\Users\\\\blizz\\\\Desktop\\\\Projects\\\\Document summarizer\\\\frontend\\\\node_modules\\\\@testing-library\\\\user-event\\\\package.json\")",
       "Bash(.venv\\\\Scripts\\\\python.exe -m pytest --tb=short)",
       "PowerShell(New-Item *)",
-      "PowerShell(try { $r = Invoke-WebRequest -Uri \"http://localhost:8000/docs\" -TimeoutSec 3; \"Backend up: $\\($r.StatusCode\\)\" } catch { \"Backend not running: $_\" })"
+      "PowerShell(try { $r = Invoke-WebRequest -Uri \"http://localhost:8000/docs\" -TimeoutSec 3; \"Backend up: $\\($r.StatusCode\\)\" } catch { \"Backend not running: $_\" })",
+      "Bash(Get-ChildItem *)",
+      "Bash(xargs grep -l \"export.*metadata\\\\|Metadata\\\\|generateMetadata\")",
+      "PowerShell(Get-ChildItem -Path \"C:\\\\Users\\\\blizz\\\\Desktop\\\\Projects\\\\Document summarizer\\\\frontend\" -Depth 1 | Where-Object {$_.Name -match \"robots|sitemap|manifest\"})"
     ]
   }
 }

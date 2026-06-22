@@ -87,3 +87,17 @@ def mock_rate_limiter():
     with patch.object(main, "db_rate_limiter") as mock_limiter:
         mock_limiter.check.return_value = (True, 0)
         yield mock_limiter
+
+
+@pytest.fixture(autouse=True)
+def reset_slowapi_storage():
+    """Reset slowapi in-memory storage between tests so IP rate limits don't accumulate."""
+    try:
+        main.limiter._storage.reset()
+    except Exception:
+        pass
+    yield
+    try:
+        main.limiter._storage.reset()
+    except Exception:
+        pass

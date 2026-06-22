@@ -3,7 +3,7 @@ import Link from "next/link"
 import { CopyEmail } from "@/components/copy-email"
 
 export const metadata: Metadata = {
-  title: "Terms of Service — Lumina",
+  title: "Terms of Service",
 }
 
 export default function TermsPage() {

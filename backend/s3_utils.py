@@ -2,6 +2,7 @@ import base64
 import datetime
 import logging
 import os
+from urllib.parse import quote
 
 import boto3
 from botocore.exceptions import ClientError
@@ -78,7 +79,7 @@ def create_signed_cloudfront_url(filename: str, expiration_seconds: int = 3600) 
 
         signer = CloudFrontSigner(key_id, rsa_signer)
         expire_date = datetime.datetime.utcnow() + datetime.timedelta(seconds=expiration_seconds)
-        return signer.generate_presigned_url(f"https://{domain}/{filename}", date_less_than=expire_date)
+        return signer.generate_presigned_url(f"https://{domain}/{quote(filename)}", date_less_than=expire_date)
     except Exception as e:
         logger.error(f"CloudFront Signed URL Error: {e}")
         return None

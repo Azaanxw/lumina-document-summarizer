@@ -162,6 +162,8 @@ export function QAChat({ documentId, onCitationClick }: QAChatProps) {
           onChange={(e) => setInput(e.target.value)}
           placeholder={isRateLimited ? "Rate limit reached…" : "Ask a question…"}
           disabled={loading || isRateLimited}
+          autoComplete="off"
+          maxLength={500}
           className="flex-1"
         />
         <Button type="submit" disabled={loading || isRateLimited || !input.trim()}>

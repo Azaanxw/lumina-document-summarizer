@@ -5,6 +5,16 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter  # pyright: 
 logger = logging.getLogger(__name__)
 
 
+def get_page_count(file_bytes: bytes) -> int:
+    try:
+        pdf_document = fitz.open(stream=file_bytes, filetype="pdf")
+        count = len(pdf_document)
+        pdf_document.close()
+        return count
+    except Exception:
+        return 0
+
+
 def extract_text_from_pdf(file_bytes: bytes) -> str:
     """Extracts all text from a PDF file stored in memory."""
     text = ""

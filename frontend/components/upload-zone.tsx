@@ -27,6 +27,12 @@ export function UploadZone({ onSuccess }: UploadZoneProps) {
       return
     }
 
+    if (file.size > 5 * 1024 * 1024) {
+      setErrorMsg("File is too large. Please try a PDF under 5MB.")
+      setState("error")
+      return
+    }
+
     setState("uploading")
     try {
       const { document_id } = await uploadDocument(file)
@@ -75,7 +81,7 @@ export function UploadZone({ onSuccess }: UploadZoneProps) {
         onDragOver={onDragOver}
         onDragLeave={onDragLeave}
         className={cn(
-          "relative flex flex-col items-center justify-center gap-4 rounded-2xl border-2 border-dashed px-8 py-16 text-center transition-colors select-none",
+          "relative flex flex-col items-center justify-center gap-4 rounded-2xl border-2 border-dashed px-8 py-10 text-center transition-colors select-none",
           !isGuestLimit && "cursor-pointer",
           state === "dragging" && "border-primary bg-primary/5",
           !isGuestLimit && state !== "dragging" && "border-border hover:border-primary/60 hover:bg-muted/40",

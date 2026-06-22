@@ -26,6 +26,32 @@ def save_document_metadata(user_id: str, filename: str, content: str):
         logger.error(f"Database Insert Error: {e}")
         return None
 
+def get_ip_documents_used(ip_address: str) -> int:
+    """Returns the number of anonymous documents uploaded from this IP address."""
+    supabase = get_supabase_client()
+    try:
+        response = (
+            supabase.table("ip_quotas")
+            .select("documents_used")
+            .eq("ip_address", ip_address)
+            .maybe_single()
+            .execute()
+        )
+        return response.data["documents_used"] if response and response.data else 0
+    except Exception as e:
+        logger.error(f"IP Quota Fetch Error: {e}")
+        return 0  # fail open
+
+def increment_ip_documents_used(ip_address: str) -> bool:
+    """Atomically upserts and increments the document count for an IP address."""
+    supabase = get_supabase_client()
+    try:
+        supabase.rpc("increment_ip_documents_used", {"p_ip": ip_address}).execute()
+        return True
+    except Exception as e:
+        logger.error(f"IP Quota Increment Error: {e}")
+        return False
+
 def get_profile(user_id: str) -> dict | None:
     """Returns the user's quota profile (documents_used, document_quota)."""
     supabase = get_supabase_client()
@@ -141,6 +167,8 @@ def clear_flashcards_cache(document_id: str) -> bool:
         logger.error(f"Clear Flashcards Cache Error: {e}")
         return False
 
+CHUNK_INSERT_BATCH_SIZE = 50
+
 def save_document_chunks(document_id: str, chunks: list[dict]) -> bool:
     """Batch-inserts page-anchored chunks with embeddings into document_chunks."""
     supabase = get_supabase_client()
@@ -154,7 +182,8 @@ def save_document_chunks(document_id: str, chunks: list[dict]) -> bool:
         for chunk in chunks
     ]
     try:
-        supabase.table("document_chunks").insert(rows).execute()
+        for i in range(0, len(rows), CHUNK_INSERT_BATCH_SIZE):
+            supabase.table("document_chunks").insert(rows[i:i + CHUNK_INSERT_BATCH_SIZE]).execute()
         return True
     except Exception as e:
         logger.error(f"Chunk Insert Error: {e}")

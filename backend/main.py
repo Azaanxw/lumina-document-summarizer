@@ -9,7 +9,7 @@ from fastapi import FastAPI, Request, UploadFile, File, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from dataclasses import dataclass
 from apscheduler.schedulers.asyncio import AsyncIOScheduler  # pyright: ignore[reportMissingImports]
 from s3_utils import upload_to_s3, create_presigned_url, create_signed_cloudfront_url, download_from_s3, delete_from_s3
@@ -19,10 +19,10 @@ from db_utils import (
     search_chunks, get_user_documents, get_document_filename, get_document_cache,
     save_document_cache, clear_summary_cache, clear_flashcards_cache,
     get_profile, increment_documents_used, get_user_document_filenames,
-    verify_document_owner,
+    verify_document_owner, get_ip_documents_used, increment_ip_documents_used,
 )
 from dotenv import load_dotenv
-from pdf_utils import extract_text_from_pdf, extract_chunks_from_pdf
+from pdf_utils import extract_text_from_pdf, extract_chunks_from_pdf, get_page_count
 from embedding_utils import embed_texts
 from gemini_utils import generate_summary_and_quiz, generate_flashcards, generate_answer
 from slowapi import Limiter, _rate_limit_exceeded_handler  # pyright: ignore[reportMissingImports]
@@ -154,7 +154,10 @@ def require_auth(auth: AuthUser | None = Depends(get_current_user)) -> AuthUser:
 # Rate limiting (/ask — 20 questions per hour, rolling window, DB-backed)
 # ---------------------------------------------------------------------------
 
-MAX_FILE_SIZE = 20 * 1024 * 1024  # 20 MB
+MAX_FILE_SIZE = 5 * 1024 * 1024  # 5 MB
+MAX_PAGES = 100
+IP_ANONYMOUS_QUOTA = 1
+IP_REGISTERED_QUOTA = 4
 db_rate_limiter = DBRateLimiter(limit=10, window_seconds=3600)
 
 # ---------------------------------------------------------------------------
@@ -166,7 +169,7 @@ class DocumentRequest(BaseModel):
 
 class AskRequest(BaseModel):
     document_id: str
-    question: str
+    question: str = Field(min_length=1, max_length=500)
 
 # ---------------------------------------------------------------------------
 # Endpoints
@@ -175,6 +178,10 @@ class AskRequest(BaseModel):
 @app.get("/health")
 def health():
     return {"status": "ok"}
+
+@app.get("/client-ip")
+def client_ip(request: Request):
+    return {"ip": get_remote_address(request)}
 
 @app.delete("/account")
 def delete_account(auth: AuthUser = Depends(require_auth)):
@@ -199,7 +206,7 @@ def list_documents(auth: AuthUser = Depends(require_auth)):
     }
 
 @app.post("/upload")
-@limiter.limit("20/minute")
+@limiter.limit("5/minute")
 async def upload_pdf(
     request: Request,
     file: UploadFile = File(...),
@@ -214,22 +221,38 @@ async def upload_pdf(
     if not file.filename:
         raise HTTPException(status_code=400, detail="Filename is required")
 
+    content_length = request.headers.get("content-length")
+    if content_length:
+        try:
+            if int(content_length) > MAX_FILE_SIZE:
+                raise HTTPException(status_code=413, detail="File too large. Maximum size is 5MB.")
+        except ValueError:
+            pass
+
     doc_count = len(get_user_documents(auth.user_id))
+    ip_address = get_remote_address(request)
     if auth.is_anonymous:
         if doc_count >= 1:
+            raise HTTPException(status_code=403, detail="quota_exceeded")
+        if get_ip_documents_used(ip_address) >= IP_ANONYMOUS_QUOTA:
             raise HTTPException(status_code=403, detail="quota_exceeded")
     else:
         profile = get_profile(auth.user_id)
         if profile and doc_count >= profile["document_quota"]:
             raise HTTPException(status_code=403, detail="quota_exceeded")
+        if get_ip_documents_used(ip_address) >= IP_REGISTERED_QUOTA:
+            raise HTTPException(status_code=403, detail="quota_exceeded")
 
     file_bytes = await file.read()
 
     if len(file_bytes) > MAX_FILE_SIZE:
-        raise HTTPException(status_code=400, detail="File too large. Maximum size is 20MB.")
+        raise HTTPException(status_code=413, detail="File too large. Maximum size is 5MB.")
 
     if file_bytes[:5] != b"%PDF-":
         raise HTTPException(status_code=400, detail="Invalid PDF file.")
+
+    if get_page_count(file_bytes) > MAX_PAGES:
+        raise HTTPException(status_code=400, detail=f"PDF too long. Maximum {MAX_PAGES} pages allowed.")
 
     extracted_text = extract_text_from_pdf(file_bytes)
     if not extracted_text:
@@ -253,6 +276,7 @@ async def upload_pdf(
     if not db_record:
         raise HTTPException(status_code=500, detail="Failed to save to database")
 
+    increment_ip_documents_used(ip_address)
     if not auth.is_anonymous:
         increment_documents_used(auth.user_id)
 

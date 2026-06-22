@@ -21,6 +21,24 @@ resource "aws_cloudfront_key_group" "lumina" {
   items = [aws_cloudfront_public_key.lumina.id]
 }
 
+resource "aws_cloudfront_response_headers_policy" "cors" {
+  name = "lumina-cors"
+
+  cors_config {
+    access_control_allow_credentials = false
+    access_control_allow_headers { items = ["*"] }
+    access_control_allow_methods { items = ["GET", "HEAD"] }
+    access_control_allow_origins {
+      items = [
+        "https://luminasummarizer.com",
+        "https://www.luminasummarizer.com",
+        "http://localhost:3000",
+      ]
+    }
+    origin_override = true
+  }
+}
+
 resource "aws_cloudfront_distribution" "lumina_pdfs" {
   origin {
     domain_name              = aws_s3_bucket.lumina_storage.bucket_regional_domain_name
@@ -42,6 +60,8 @@ resource "aws_cloudfront_distribution" "lumina_pdfs" {
       query_string = false
       cookies { forward = "none" }
     }
+
+    response_headers_policy_id = aws_cloudfront_response_headers_policy.cors.id
 
     min_ttl     = 0
     default_ttl = 86400   # 1 day
