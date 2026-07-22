@@ -1,4 +1,4 @@
-name: Deploy to ECS
+name: Deploy to Lambda
 
 on:
   push:
@@ -7,9 +7,8 @@ on:
 env:
   AWS_REGION: eu-west-2
   ECR_REPOSITORY: lumina-backend
-  ECS_CLUSTER: lumina-cluster
-  ECS_SERVICE: lumina-backend
-  CONTAINER_NAME: lumina-backend
+  API_FUNCTION: lumina-backend-api
+  CRON_FUNCTION: lumina-backend-cron
 
 jobs:
   deploy:
@@ -29,36 +28,39 @@ jobs:
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Build, tag, and push image to ECR
-        id: build-image
+      - name: Build, tag, and push API image
+        id: build-api-image
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          IMAGE_TAG: ${{ github.sha }}
+          IMAGE_TAG: api-${{ github.sha }}
         run: |
-          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG ./backend
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG -f backend/Dockerfile ./backend
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
           echo "image=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
 
-      - name: Download current ECS task definition
+      - name: Build, tag, and push cron image
+        id: build-cron-image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: cron-${{ github.sha }}
         run: |
-          aws ecs describe-task-definition --task-definition lumina-backend \
-            --query taskDefinition > task-definition.json
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG -f backend/Dockerfile.cron ./backend
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          echo "image=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
 
-      - name: Render new task definition with updated image
-        id: task-def
-        uses: aws-actions/amazon-ecs-render-task-definition@v1
-        with:
-          task-definition: task-definition.json
-          container-name: ${{ env.CONTAINER_NAME }}
-          image: ${{ steps.build-image.outputs.image }}
+      - name: Deploy API Lambda
+        run: |
+          aws lambda update-function-code \
+            --function-name ${{ env.API_FUNCTION }} \
+            --image-uri ${{ steps.build-api-image.outputs.image }}
+          aws lambda wait function-updated --function-name ${{ env.API_FUNCTION }}
 
-      - name: Deploy to ECS
-        uses: aws-actions/amazon-ecs-deploy-task-definition@v2
-        with:
-          task-definition: ${{ steps.task-def.outputs.task-definition }}
-          service: ${{ env.ECS_SERVICE }}
-          cluster: ${{ env.ECS_CLUSTER }}
-          wait-for-service-stability: true
+      - name: Deploy cron Lambda
+        run: |
+          aws lambda update-function-code \
+            --function-name ${{ env.CRON_FUNCTION }} \
+            --image-uri ${{ steps.build-cron-image.outputs.image }}
+          aws lambda wait function-updated --function-name ${{ env.CRON_FUNCTION }}
 
       - name: Set up Node for smoke tests
         uses: actions/setup-node@v4

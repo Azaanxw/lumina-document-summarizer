@@ -9,6 +9,7 @@ FastAPI backend for PDF ingestion, RAG-powered Q&A with page citations, AI study
 ```
 backend/
 ├── main.py             # FastAPI app — all endpoints, auth, DB-backed rate limiter, Sentry init
+├── lambda_cron_handler.py  # Lambda handler for the daily cleanup job (imports cleanup_anonymous_documents from main.py)
 ├── logging_config.py   # Centralized logging setup (StreamHandler, LOG_LEVEL env var)
 ├── rate_limiter.py     # DBRateLimiter — Supabase-backed rolling window rate limiter
 ├── pdf_utils.py        # PDF text extraction + page-anchored chunking (PyMuPDF)
@@ -17,7 +18,8 @@ backend/
 ├── db_utils.py         # Supabase client — all DB queries including auth/profile/claim
 ├── s3_utils.py         # AWS S3 upload and presigned URL helpers
 ├── requirements.txt    # Python dependencies
-├── Dockerfile          # Production container image (python:3.13-slim, uvicorn on port 8000)
+├── Dockerfile          # API Lambda image (python:3.13-slim + Lambda Web Adapter, uvicorn on port 8000)
+├── Dockerfile.cron     # Cron Lambda image (standard public.ecr.aws/lambda/python:3.13 base)
 ├── .dockerignore       # Excludes venv/, __pycache__/, .env, tests/ from image
 ├── pytest.ini          # pytest config (testpaths = tests, asyncio_mode = auto)
 ├── .env                # Environment variables (not committed)
@@ -61,11 +63,11 @@ backend/
 ## Files
 
 ### `main.py`
-Entry point. Defines all endpoints, auth dependencies, DB-backed rate limiter, Sentry init, structured logging, and background scheduler.
+Entry point. Defines all endpoints, auth dependencies, DB-backed rate limiter, Sentry init, and structured logging. Also fetches secrets from Secrets Manager at cold start when running in Lambda (`_load_secrets_from_secrets_manager()` — no-op outside Lambda, where `.env`/`load_dotenv()` already populates the environment).
 
-**Background scheduler (APScheduler `AsyncIOScheduler`):**
-- `cleanup_anonymous_documents()` — runs daily at 3 AM UTC. Paginates through all Supabase auth users; for each anonymous user created >30 days ago: deletes their S3 files then calls `auth.admin.delete_user()` (cascades to `documents` and `document_chunks` rows).
-- Scheduler is started/stopped via a FastAPI lifespan context manager (`@asynccontextmanager`).
+**Cleanup job (`cleanup_anonymous_documents()`):**
+- Paginates through all Supabase auth users; for each anonymous user created >30 days ago: deletes their S3 files then calls `auth.admin.delete_user()` (cascades to `documents` and `document_chunks` rows).
+- Runs daily at 3 AM UTC via **EventBridge Scheduler → `lumina-backend-cron` Lambda** (`lambda_cron_handler.py` imports and calls this function directly). Previously ran in-process via APScheduler in FastAPI's `lifespan`, but that can't fire reliably in Lambda — execution environments are frozen between invocations with no guarantee anything is running to catch a scheduled callback.
 
 **Auth dependencies:**
 - `AuthUser` — dataclass with `user_id: str` and `is_anonymous: bool`
@@ -83,9 +85,9 @@ Configures the root logger with a `StreamHandler` to stdout. Format: `timestamp 
 
 ---
 
-**`GET /health`** — Returns `{"status": "ok"}`. Used by ECS/ALB container health checks — no auth required.
+**`GET /health`** — Returns `{"status": "ok"}`. Used by the Lambda Web Adapter's readiness check (`AWS_LWA_READINESS_CHECK_PATH`) — no auth required.
 
-**`GET /client-ip`** — Returns `{"ip": "<client_ip>"}` as seen by the backend after ALB/proxy headers. No auth required. Used by smoke tests to get the exact IP stored in `ip_quotas` for cleanup.
+**`GET /client-ip`** — Returns `{"ip": "<client_ip>"}` as seen by the backend. No auth required. Used by smoke tests to get the exact IP stored in `ip_quotas` for cleanup.
 
 **`GET /documents`** *(requires auth)*
 - Returns `{"documents": [{id, filename, created_at}, ...], "quota": {"used": int, "total": int}}`
@@ -215,8 +217,8 @@ Supabase (PostgreSQL + pgvector) interactions. Uses `SUPABASE_SERVICE_ROLE_KEY` 
 | `updated_at` | timestamptz | Updated on every increment |
 
 **Cleanup (two layers):**
-- **APScheduler job** (`main.py`) — runs daily at 3 AM UTC; deletes S3 objects then calls `auth.admin.delete_user()`, which cascades to `documents` + `document_chunks` rows. This is the primary cleanup path.
-- **pg_cron job** (Supabase) — legacy DB-only cleanup; kept as a safety net in case the ECS container is restarted before 3 AM.
+- **EventBridge Scheduler → `lumina-backend-cron` Lambda** — runs daily at 3 AM UTC; deletes S3 objects then calls `auth.admin.delete_user()`, which cascades to `documents` + `document_chunks` rows. This is the primary cleanup path.
+- **pg_cron job** (Supabase) — legacy DB-only cleanup; kept as a safety net.
 
 ---
 
@@ -268,8 +270,6 @@ Never committed to git.
 ```
 SUPABASE_URL=
 SUPABASE_SERVICE_ROLE_KEY=
-AWS_ACCESS_KEY_ID=
-AWS_SECRET_ACCESS_KEY=
 AWS_REGION=
 AWS_S3_BUCKET=
 OPENAI_API_KEY=
@@ -280,7 +280,10 @@ LOG_LEVEL=                   # optional — DEBUG | INFO | WARNING | ERROR (defa
 CLOUDFRONT_DOMAIN=           # CloudFront distribution domain (e.g. xxxx.cloudfront.net)
 CLOUDFRONT_KEY_PAIR_ID=      # CloudFront public key ID (from Terraform output)
 CLOUDFRONT_PRIVATE_KEY_B64=  # Base64-encoded RSA-2048 private key for signing CloudFront URLs
+SECRETS_ARN=                 # production only — Secrets Manager ARN; triggers _load_secrets_from_secrets_manager() in Lambda
 ```
+
+`get_s3_client()` uses boto3's default credential chain (Lambda execution role / local `~/.aws` in dev) rather than explicit access keys — `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY` are not read anywhere.
 
 ---
 

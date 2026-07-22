@@ -4,14 +4,12 @@ import datetime
 import sentry_sdk  # pyright: ignore[reportMissingImports]
 from sentry_sdk.integrations.fastapi import FastApiIntegration  # pyright: ignore[reportMissingImports]
 from sentry_sdk.integrations.starlette import StarletteIntegration  # pyright: ignore[reportMissingImports]
-from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, UploadFile, File, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel, Field
 from dataclasses import dataclass
-from apscheduler.schedulers.asyncio import AsyncIOScheduler  # pyright: ignore[reportMissingImports]
 from s3_utils import upload_to_s3, create_presigned_url, create_signed_cloudfront_url, download_from_s3, delete_from_s3
 from db_utils import (
     get_supabase_client,
@@ -35,6 +33,24 @@ import httpx
 import asyncio
 
 load_dotenv()
+
+
+def _load_secrets_from_secrets_manager() -> None:
+    """In Lambda there's no ECS-style auto-injection of Secrets Manager values
+    into the environment, so fetch them once at cold start instead."""
+    secrets_arn = os.getenv("SECRETS_ARN")
+    if not os.getenv("AWS_LAMBDA_FUNCTION_NAME") or not secrets_arn:
+        return
+    import json
+    import boto3  # pyright: ignore[reportMissingImports]
+
+    client = boto3.client("secretsmanager")
+    secret = client.get_secret_value(SecretId=secrets_arn)
+    for key, value in json.loads(secret["SecretString"]).items():
+        os.environ.setdefault(key, value)
+
+
+_load_secrets_from_secrets_manager()
 setup_logging()
 
 sentry_sdk.init(
@@ -78,17 +94,7 @@ async def cleanup_anonymous_documents() -> None:
         logger.error(f"Cleanup error: {e}")
 
 
-@asynccontextmanager
-async def lifespan(_app: FastAPI):
-    scheduler = AsyncIOScheduler()
-    scheduler.add_job(cleanup_anonymous_documents, "cron", hour=3, minute=0)
-    scheduler.start()
-    logger.info("Scheduler started")
-    yield
-    scheduler.shutdown()
-
-
-app = FastAPI(lifespan=lifespan)
+app = FastAPI()
 
 limiter = Limiter(key_func=get_remote_address)
 app.state.limiter = limiter

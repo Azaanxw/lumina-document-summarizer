@@ -16,20 +16,8 @@ resource "aws_secretsmanager_secret_version" "lumina_app" {
   })
 }
 
-# Allow the ECS task execution role to fetch this secret at container startup
-resource "aws_iam_role_policy" "ecs_execution_secrets" {
-  name = "lumina-secrets-access"
-  role = aws_iam_role.ecs_task_execution.id
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [{
-      Effect   = "Allow"
-      Action   = "secretsmanager:GetSecretValue"
-      Resource = aws_secretsmanager_secret.lumina_app.arn
-    }]
-  })
-}
+# Secrets access policies for the Lambda execution roles live in lambda.tf
+# (aws_iam_role_policy.lambda_api_secrets / lambda_cron_secrets)
 
 output "secrets_manager_arn" {
   value = aws_secretsmanager_secret.lumina_app.arn
