@@ -1,0 +1,43 @@
+name: Bootstrap Lambda images (manual)
+
+# One-off/disaster-recovery: builds and pushes the api-latest / cron-latest
+# images that `terraform apply` bootstraps the Lambda functions from.
+# Normal deploys use deploy.yml (sha-tagged images + update-function-code).
+on:
+  workflow_dispatch:
+
+env:
+  AWS_REGION: eu-west-2
+  ECR_REPOSITORY: lumina-backend
+
+jobs:
+  build:
+    name: Build and push bootstrap images
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Log in to ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and push API bootstrap image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        run: |
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:api-latest -f backend/Dockerfile ./backend
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:api-latest
+
+      - name: Build and push cron bootstrap image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        run: |
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:cron-latest -f backend/Dockerfile.cron ./backend
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:cron-latest
