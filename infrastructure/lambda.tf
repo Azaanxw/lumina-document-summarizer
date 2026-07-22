@@ -99,6 +99,16 @@ resource "aws_lambda_function_url" "lumina_api" {
   authorization_type = "NONE" # app enforces its own auth via Supabase bearer tokens
 }
 
+# authorization_type = NONE alone doesn't allow public invocation — Lambda
+# still needs an explicit resource-based policy permitting it.
+resource "aws_lambda_permission" "function_url_public" {
+  statement_id           = "AllowPublicFunctionUrlInvoke"
+  action                 = "lambda:InvokeFunctionUrl"
+  function_name          = aws_lambda_function.lumina_api.function_name
+  principal              = "*"
+  function_url_auth_type = "NONE"
+}
+
 output "lambda_function_url" {
   value       = aws_lambda_function_url.lumina_api.function_url
   description = "Set this as NEXT_PUBLIC_API_URL in the frontend"
