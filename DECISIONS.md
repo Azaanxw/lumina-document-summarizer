@@ -35,9 +35,11 @@ Choice: Shadcn/ui + Tailwind CSS
 Why: These provide the best minimalistic designs and are currently the industry standard for building modern web apps.
 
 7. **Deployment & DevOps**
-Choice: Docker + GitHub Actions + Vercel (frontend) + AWS ECS (backend)
+Choice: Docker + GitHub Actions + Vercel (frontend) + AWS Lambda (backend)
 
-Why: Docker ensures the backend runs identically across local and production environments. GitHub Actions automates CI/CD. Vercel hosts the Next.js frontend with native App Router support and zero-config deploys from GitHub. AWS ECS hosts the FastAPI backend — it extends the existing AWS infrastructure (S3, Terraform) into a complete cloud story on one provider, demonstrating real production deployment patterns (containerisation, IAM, VPC, load balancing) that Render or similar PaaS tools abstract away.
+Why: Docker ensures the backend runs identically across local and production environments. GitHub Actions automates CI/CD. Vercel hosts the Next.js frontend with native App Router support and zero-config deploys from GitHub.
+
+**Superseded (was: AWS ECS + ALB + VPC).** The original choice was deliberately ECS/ALB/VPC to demonstrate production deployment patterns (containerisation, IAM, load balancing) that PaaS tools abstract away. Real AWS Cost Explorer data showed this always-on stack cost ~$40/mo (ALB $19, VPC public IPs $11, Fargate compute $10) for an API with negligible traffic — pure fixed cost, unrelated to usage. Migrated to Lambda: the API function runs the same FastAPI/uvicorn app unchanged via the AWS Lambda Web Adapter, exposed through a Function URL (no ALB, no VPC, no idle compute — cost now tracks actual invocations instead of uptime). The daily anonymous-user cleanup job (previously an in-process APScheduler job) also moved to Lambda, triggered by EventBridge Scheduler, since a scheduler running inside a frozen Lambda execution environment can't fire reliably.
 
 8. **AI Model for Study Tools**
 Choice: Gemini 3.1 Flash Lite (`google-genai` SDK)

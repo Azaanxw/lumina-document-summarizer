@@ -28,9 +28,15 @@ variable "sentry_dsn" {
 }
 
 variable "app_image_tag" {
-  description = "Docker image tag to deploy"
+  description = "ECR tag for the API Lambda image. Terraform only reads this at creation time (image_uri is in lifecycle.ignore_changes) — CI updates the running code afterwards via `aws lambda update-function-code`. An image with this tag must already exist in ECR before the first `terraform apply`."
   type        = string
-  default     = "latest"
+  default     = "api-latest"
+}
+
+variable "cron_image_tag" {
+  description = "ECR tag for the cron Lambda image. Same bootstrapping caveat as app_image_tag."
+  type        = string
+  default     = "cron-latest"
 }
 
 variable "cloudfront_public_key" {

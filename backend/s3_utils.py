@@ -12,13 +12,15 @@ logger = logging.getLogger(__name__)
 
 
 def get_s3_client():
-    """Returns an authenticated S3 client."""
-    return boto3.client(
-        's3',
-        aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
-        aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY"),
-        region_name=os.getenv("AWS_REGION")
-    )
+    """Returns an authenticated S3 client.
+
+    Uses boto3's default credential chain (execution-role/task-role/instance
+    creds, or local ~/.aws / env vars in dev) rather than passing an access
+    key + secret explicitly — Lambda's auto-injected credentials are
+    temporary STS creds that also require a session token, which explicit
+    access_key/secret_key kwargs here would drop.
+    """
+    return boto3.client('s3', region_name=os.getenv("AWS_REGION"))
 
 async def upload_to_s3(file_obj, filename: str):
     """Uploads a file to the S3 bucket and returns the S3 Key (filename)."""
