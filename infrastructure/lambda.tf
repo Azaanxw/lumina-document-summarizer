@@ -100,13 +100,22 @@ resource "aws_lambda_function_url" "lumina_api" {
 }
 
 # authorization_type = NONE alone doesn't allow public invocation — Lambda
-# still needs an explicit resource-based policy permitting it.
+# still needs explicit resource-based permissions for BOTH actions below
+# (confirmed via the console's own warning banner: granting only
+# InvokeFunctionUrl still 403s every request).
 resource "aws_lambda_permission" "function_url_public" {
   statement_id           = "AllowPublicFunctionUrlInvoke"
   action                 = "lambda:InvokeFunctionUrl"
   function_name          = aws_lambda_function.lumina_api.function_name
   principal              = "*"
   function_url_auth_type = "NONE"
+}
+
+resource "aws_lambda_permission" "function_public_invoke" {
+  statement_id  = "AllowPublicInvokeFunction"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.lumina_api.function_name
+  principal     = "*"
 }
 
 output "lambda_function_url" {
